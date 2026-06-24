@@ -1,0 +1,26 @@
+<?php
+/**
+ * service_info.pdt — compact service summary panel shown in client service list.
+ *
+ * Variables provided by getClientServiceInfo():
+ *   $service_info (array) — associative array of label => value pairs
+ *
+ * This view is optional; Blesta falls back to displaying the key/value pairs
+ * from getClientServiceInfo() in a default layout if this template is absent.
+ * We include it for a cleaner presentation.
+ */
+?>
+<div class="paneldns-service-info">
+    <table class="table table-condensed" style="font-size:12px; margin:0;">
+        <?php if (!empty($service_info)) { foreach ($service_info as $label => $value) { ?>
+        <tr>
+            <th style="width:40%; padding:6px 8px; border-top:none; font-weight:600; color:#6b7280; font-size:11px; text-transform:uppercase;">
+                <?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+            </th>
+            <td style="padding:6px 8px; border-top:none;">
+                <?php echo htmlspecialchars($value, ENT_QUOTES, 'UTF-8'); ?>
+            </td>
+        </tr>
+        <?php } } ?>
+    </table>
+</div>

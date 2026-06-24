@@ -1,0 +1,11 @@
+{
+    "name": "PanelDNS",
+    "description": "Provisioning module for PanelDNS — sell white-label DNS reseller accounts via the /platform/v1 API.",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "HostingSimple",
+            "url": "https://paneldns.com"
+        }
+    ]
+}

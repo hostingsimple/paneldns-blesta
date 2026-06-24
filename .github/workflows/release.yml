@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build ZIP and create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release ZIP
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          ZIP_NAME="paneldns-blesta-v${VERSION}.zip"
+
+          # Create a staging directory with the correct install path.
+          mkdir -p staging/components/modules/paneldns
+
+          # Copy module files.
+          cp -r components/modules/paneldns/. staging/components/modules/paneldns/
+
+          # Copy top-level docs into the ZIP.
+          cp README.md  staging/
+          cp CHANGELOG.md staging/
+
+          # Package it.
+          cd staging
+          zip -r "../${ZIP_NAME}" . -x "*.DS_Store" -x "__MACOSX/*"
+          cd ..
+
+          echo "Built: ${ZIP_NAME}"
+          ls -lh "${ZIP_NAME}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "PanelDNS Blesta Module v${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## PanelDNS Blesta Provisioning Module v${{ steps.version.outputs.VERSION }}
+
+            See [CHANGELOG.md](CHANGELOG.md) for details.
+
+            ### Installation
+            1. Download `paneldns-blesta-v${{ steps.version.outputs.VERSION }}.zip`
+            2. In Blesta Admin, go to **Settings → Modules → Available Modules → Upload Module**
+            3. Upload the ZIP and click **Install**
+            4. Go to **Settings → Modules → Installed Modules → PanelDNS → Add Server** and enter your credentials
+
+            See [README.md](README.md) for full setup instructions.
+          files: "paneldns-blesta-v${{ steps.version.outputs.VERSION }}.zip"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}

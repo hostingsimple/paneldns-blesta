@@ -1,0 +1,122 @@
+<?php
+/**
+ * tab_client_usage.pdt — Client area "DNS Usage" tab.
+ *
+ * Variables:
+ *   $not_provisioned (bool)   — true if no org_id yet
+ *   $data            (array)  — org summary from /platform/v1/orgs/{id}/summary
+ *   $sso_url         (string) — one-time SSO login URL (may be null)
+ *   $error           (string) — error message (may be null)
+ */
+
+function pdns_progress_bar(int $used, $limit): string
+{
+    if ($limit === null || $limit <= 0) {
+        // Unlimited plan — show a minimal bar.
+        return '<div class="progress" style="height:8px"><div class="progress-bar bg-success" style="width:5%"></div></div>';
+    }
+    $pct = min(100, round(($used / $limit) * 100));
+    $cls = $pct >= 90 ? 'bg-danger' : ($pct >= 70 ? 'bg-warning' : 'bg-success');
+    return '<div class="progress" style="height:8px"><div class="progress-bar ' . $cls . '" style="width:' . $pct . '%"></div></div>';
+}
+?>
+
+<div class="paneldns-client-usage" style="padding: 16px 0;">
+
+    <?php if ($not_provisioned) { ?>
+    <div class="alert alert-warning">
+        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.not_provisioned', true), ENT_QUOTES, 'UTF-8'); ?>
+    </div>
+
+    <?php } elseif ($error) { ?>
+    <div class="alert alert-danger">
+        <?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?>
+    </div>
+
+    <?php } else {
+        $org   = $data['org']   ?? [];
+        $plan  = $data['plan']  ?? [];
+        $usage = $data['usage'] ?? [];
+
+        $status = $org['status'] ?? 'unknown';
+
+        if ($status === 'suspended') { ?>
+    <div class="alert alert-warning">
+        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.suspended', true), ENT_QUOTES, 'UTF-8'); ?>
+    </div>
+        <?php }
+    ?>
+
+    <div class="row">
+        <!-- Plan + Status info card -->
+        <div class="col-md-4">
+            <div class="panel panel-default">
+                <div class="panel-body" style="text-align:center; padding: 24px 16px;">
+                    <h4 style="margin-top:0; color:#2563eb;">
+                        <?php echo htmlspecialchars($plan['name'] ?? '—', ENT_QUOTES, 'UTF-8'); ?>
+                    </h4>
+                    <p style="margin:0; font-size:13px; color:#6b7280;">
+                        Status:
+                        <strong style="color:<?php echo $status === 'active' ? '#16a34a' : ($status === 'suspended' ? '#d97706' : '#9ca3af'); ?>">
+                            <?php echo htmlspecialchars(ucfirst($status), ENT_QUOTES, 'UTF-8'); ?>
+                        </strong>
+                    </p>
+                    <?php if ($sso_url) { ?>
+                    <a href="<?php echo htmlspecialchars($sso_url, ENT_QUOTES, 'UTF-8'); ?>"
+                       class="btn btn-primary btn-sm"
+                       style="margin-top:16px;"
+                       target="_blank" rel="noopener noreferrer">
+                        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.login_btn', true), ENT_QUOTES, 'UTF-8'); ?> &rarr;
+                    </a>
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- Usage stats cards -->
+        <div class="col-md-8">
+            <div class="panel panel-default">
+                <div class="panel-body">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <?php
+                        $zonesUsed   = (int) ($usage['active_zones'] ?? 0);
+                        $zonesLimit  = isset($plan['zones'])   && $plan['zones']   !== null ? (int) $plan['zones']   : null;
+                        $clientsUsed = (int) ($usage['sub_clients'] ?? 0);
+                        $clientLimit = isset($plan['clients']) && $plan['clients'] !== null ? (int) $plan['clients'] : null;
+                        $apiCalls    = (int) ($usage['api_calls_current_period'] ?? 0);
+
+                        $rows = [
+                            [Language::_('paneldns.client_usage.zones', true),   $zonesUsed,   $zonesLimit],
+                            [Language::_('paneldns.client_usage.clients', true),  $clientsUsed, $clientLimit],
+                        ];
+                        foreach ($rows as [$label, $used, $limit]) {
+                            $limitStr = $limit !== null ? number_format($limit) : Language::_('paneldns.client_usage.unlimited', true);
+                        ?>
+                        <tr style="border-bottom:1px solid #f3f4f6;">
+                            <td style="padding:12px 8px; font-weight:600; width:40%;">
+                                <?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+                            </td>
+                            <td style="padding:12px 8px;">
+                                <span style="font-variant-numeric:tabular-nums;">
+                                    <?php echo number_format($used); ?> / <?php echo htmlspecialchars($limitStr, ENT_QUOTES, 'UTF-8'); ?>
+                                </span>
+                                <?php echo pdns_progress_bar($used, $limit); ?>
+                            </td>
+                        </tr>
+                        <?php } ?>
+                        <tr>
+                            <td style="padding:12px 8px; font-weight:600;">
+                                <?php echo htmlspecialchars(Language::_('paneldns.client_usage.api_calls', true), ENT_QUOTES, 'UTF-8'); ?>
+                            </td>
+                            <td style="padding:12px 8px; font-variant-numeric:tabular-nums;">
+                                <?php echo number_format($apiCalls); ?>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php } ?>
+</div>

@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artefacts
+*.zip
+staging/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Composer (not used in this project, but just in case)
+vendor/
+composer.lock
+
+# PHP test artefacts
+.phpunit.result.cache
+coverage/

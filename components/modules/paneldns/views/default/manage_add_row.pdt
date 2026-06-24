@@ -1,0 +1,59 @@
+<?php
+/**
+ * manage_add_row.pdt — Add PanelDNS Server form.
+ * Variables: $vars (POST data / defaults)
+ */
+$vars = $vars ?? [];
+?>
+<div class="paneldns-add-row">
+    <?php
+    $this->Form->create();
+    ?>
+
+    <div class="form-group">
+        <label for="name">Server Name</label>
+        <input type="text"
+               id="name"
+               name="name"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['name'] ?? ''); ?>"
+               placeholder="My PanelDNS Server" />
+        <small class="form-text text-muted">A friendly label for this PanelDNS installation.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="base_url">Base URL <span class="required">*</span></label>
+        <input type="url"
+               id="base_url"
+               name="base_url"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['base_url'] ?? ''); ?>"
+               placeholder="https://app.paneldns.com" />
+        <small class="form-text text-muted">
+            The root URL of your PanelDNS installation. Must start with <code>https://</code>.
+        </small>
+    </div>
+
+    <div class="form-group">
+        <label for="platform_key">Platform API Key <span class="required">*</span></label>
+        <input type="password"
+               id="platform_key"
+               name="platform_key"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['platform_key'] ?? ''); ?>"
+               autocomplete="new-password"
+               placeholder="pdns_platform_..." />
+        <small class="form-text text-muted">
+            Found at <strong>PanelDNS Admin → Settings → API Keys → Platform Key</strong>.
+            Stored encrypted. The key is validated on save by calling the PanelDNS API.
+        </small>
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">Add Server</button>
+        <a href="<?php echo $this->Html->safe($this->base_uri . 'settings/company/modules/manage/' . (isset($module) ? $module->id : '') . '/'); ?>"
+           class="btn btn-default">Cancel</a>
+    </div>
+
+    <?php $this->Form->end(); ?>
+</div>
