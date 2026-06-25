@@ -1,15 +1,13 @@
 <?php
 /**
- * PanelDnsApi — cURL wrapper for the PanelDNS Platform API (/platform/v1).
+ * PanelDnsApi — cURL wrapper for the PanelDNS Reseller API (/api/v1).
  *
- * Used by the Blesta provisioning module to drive org lifecycle operations.
- * Mirrors shared/PanelDnsApi.php from paneldns-whmcs but adapted for Blesta:
- *   - Logging via $module->log() instead of logModuleCall()
- *   - TLS verify from Configure::get('Blesta.curl_verify_ssl')
- *   - No WHMCS-specific class references
+ * Used by the Blesta provisioning module to drive sub-client lifecycle.
+ * Authenticates with a reseller Bearer token (dnsm_* format) from the
+ * reseller's Settings → API Tokens page.
  *
  * Security:
- *   - Bearer token never logged (redacted to [REDACTED] in all log payloads)
+ *   - Bearer token never logged (redacted to [REDACTED] in all payloads)
  *   - CURLOPT_IPRESOLVE_V4 forces IPv4 — SSRF guard (no IPv6 rebinding)
  *   - Private IP check on resolved primary_ip after each call
  *   - HTTP warning logged when base_url is plaintext http://
@@ -17,103 +15,85 @@
 class PanelDnsApi
 {
     private string $baseUrl;
-    private string $platformKey;
+    private string $apiToken;
     private bool   $tlsVerify;
-    private int    $timeout    = 15;
+    private int    $timeout        = 15;
     private int    $connectTimeout = 5;
 
     /** Reference to the parent Module instance for $this->log() calls. */
     private ?object $module;
 
-    public function __construct(string $baseUrl, string $platformKey, bool $tlsVerify = true, ?object $module = null)
+    public function __construct(string $baseUrl, string $apiToken, bool $tlsVerify = true, ?object $module = null)
     {
-        $this->baseUrl     = rtrim($baseUrl, '/');
-        $this->platformKey = $platformKey;
-        $this->tlsVerify   = $tlsVerify;
-        $this->module      = $module;
+        $this->baseUrl  = rtrim($baseUrl, '/');
+        $this->apiToken = $apiToken;
+        $this->tlsVerify = $tlsVerify;
+        $this->module   = $module;
 
         if (str_starts_with($this->baseUrl, 'http://')) {
-            $this->log('WARNING', $this->baseUrl, [], 'API calls over plaintext HTTP — platform key transmitted unencrypted', '');
+            $this->log('WARNING', $this->baseUrl, [], 'API calls over plaintext HTTP — Bearer token transmitted unencrypted', '');
         }
     }
 
-    // ── Domain methods ────────────────────────────────────────────────────────
+    // ── Credential check ──────────────────────────────────────────────────────
 
-    /** GET /platform/v1/licence-status — validate credentials. */
+    /** GET /api/v1/licence-status — validate reseller credentials. */
     public function getLicenceStatus(): array
     {
-        return $this->get('/platform/v1/licence-status');
+        return $this->get('/api/v1/licence-status');
     }
 
-    /** GET /platform/v1/plans — list available plans. */
-    public function getPlans(): array
-    {
-        return $this->get('/platform/v1/plans');
-    }
+    // ── Sub-client methods ────────────────────────────────────────────────────
 
     /**
-     * POST /platform/v1/orgs — create a new reseller org.
+     * POST /api/v1/sub-clients — create a sub-client under this reseller's org.
      *
-     * @param array $data {name, plan_slug, owner: {name, email, password}, ...}
+     * @param array $data {name, email, password?, zone_limit?, max_records?}
      */
-    public function createOrg(array $data): array
+    public function createSubClient(array $data): array
     {
-        return $this->post('/platform/v1/orgs', $data);
+        return $this->post('/api/v1/sub-clients', $data);
     }
 
-    /** GET /platform/v1/orgs/{id} */
-    public function getOrg(int $id): array
+    /** GET /api/v1/sub-clients/{id} */
+    public function getSubClient(int $id): array
     {
-        return $this->get("/platform/v1/orgs/{$id}");
-    }
-
-    /** PATCH /platform/v1/orgs/{id} */
-    public function patchOrg(int $id, array $data): array
-    {
-        return $this->patch("/platform/v1/orgs/{$id}", $data);
-    }
-
-    /** DELETE /platform/v1/orgs/{id} */
-    public function deleteOrg(int $id): array
-    {
-        return $this->delete("/platform/v1/orgs/{$id}");
+        return $this->get("/api/v1/sub-clients/{$id}");
     }
 
     /**
-     * GET /platform/v1/orgs/{id}/summary
-     * Returns usage + plan + org status in one call.
+     * PATCH /api/v1/sub-clients/{id}
+     *
+     * Partial update — pass only the fields to change.
+     * @param array $data Subset of {name, status, zone_limit, max_records}
      */
-    public function getOrgSummary(int $id): array
+    public function patchSubClient(int $id, array $data): array
     {
-        return $this->get("/platform/v1/orgs/{$id}/summary");
+        return $this->patch("/api/v1/sub-clients/{$id}", $data);
+    }
+
+    /** DELETE /api/v1/sub-clients/{id} */
+    public function deleteSubClient(int $id): array
+    {
+        return $this->delete("/api/v1/sub-clients/{$id}");
     }
 
     /**
-     * POST /platform/v1/orgs/{id}/sso-token
-     * Mints a short-lived SSO login URL.
+     * GET /api/v1/sub-clients/{id}/summary
+     * Returns zone count, record count, and limits in one call.
      */
-    public function mintSsoToken(int $id, ?string $email = null): array
+    public function getSubClientSummary(int $id): array
     {
-        $body = $email ? ['user_email' => $email] : [];
-        return $this->post("/platform/v1/orgs/{$id}/sso-token", $body);
+        return $this->get("/api/v1/sub-clients/{$id}/summary");
     }
 
     /**
-     * POST /platform/v1/orgs/{id}/suspend
-     * Suspend a reseller org.
+     * POST /api/v1/sub-clients/{id}/sso-token
+     * Mints a short-lived one-time SSO login URL pointing at the sub-client portal.
      */
-    public function suspendOrg(int $id): array
+    public function mintSsoToken(int $id): array
     {
-        return $this->post("/platform/v1/orgs/{$id}/suspend");
-    }
-
-    /**
-     * POST /platform/v1/orgs/{id}/unsuspend
-     * Unsuspend a reseller org.
-     */
-    public function unsuspendOrg(int $id): array
-    {
-        return $this->post("/platform/v1/orgs/{$id}/unsuspend");
+        return $this->post("/api/v1/sub-clients/{$id}/sso-token");
     }
 
     // ── Generic HTTP verbs ────────────────────────────────────────────────────
@@ -146,8 +126,8 @@ class PanelDnsApi
         $ch      = curl_init();
         $headers = [
             'Accept: application/json',
-            'Authorization: Bearer ' . $this->platformKey,
-            'User-Agent: paneldns-blesta/1.0.0',
+            'Authorization: Bearer ' . $this->apiToken,
+            'User-Agent: paneldns-blesta/2.0.0',
         ];
 
         $opts = [
@@ -182,7 +162,6 @@ class PanelDnsApi
             return ['ok' => false, 'status' => 0, 'data' => null, 'error' => 'cURL error: ' . $curlErr];
         }
 
-        // SSRF belt-and-braces: block responses from private ranges even with IPRESOLVE_V4 set.
         if ($primaryIp !== '' && self::isPrivateIp($primaryIp)) {
             return ['ok' => false, 'status' => 0, 'data' => null, 'error' => 'SSRF guard: target resolved to a private IP'];
         }
@@ -201,24 +180,21 @@ class PanelDnsApi
 
     /**
      * Log the API call via the parent module's log() method.
-     * The platform key is never included in any logged payload.
+     * The Bearer token is never included in any logged payload.
      */
     private function log(
         string $method,
         string $url,
         ?array $body,
-        int    $status    = 0,
-        ?string $rawResp  = null,
-        ?string $curlErr  = null
+        int    $status   = 0,
+        ?string $rawResp = null,
+        ?string $curlErr = null
     ): void {
         if ($this->module === null || !method_exists($this->module, 'log')) {
             return;
         }
 
-        // Redact the key from the URL if it ever leaks in (it shouldn't, it's a header).
-        $safeUrl = $this->redactUrl($url);
-
-        // Redact known secret fields from the body before logging.
+        $safeUrl  = $this->redactUrl($url);
         $safeBody = $this->redactBody($body ?? []);
 
         $response = [
@@ -227,7 +203,6 @@ class PanelDnsApi
             'curl_error' => $curlErr,
         ];
 
-        // Blesta log() signature: log($url, $vars, $direction, $success)
         $this->module->log($safeUrl, serialize($safeBody), 'input', true);
         $this->module->log($safeUrl, serialize($response),  'output', $status >= 200 && $status < 300);
     }
@@ -244,12 +219,11 @@ class PanelDnsApi
     private function redactBody(array $payload): array
     {
         $copy = $payload;
-        foreach (['password', 'api_key', 'token', 'secret', 'authorization', 'platform_key'] as $field) {
+        foreach (['password', 'api_key', 'token', 'secret', 'authorization', 'api_token'] as $field) {
             if (isset($copy[$field])) {
                 $copy[$field] = '[REDACTED]';
             }
         }
-        // Recurse one level for nested arrays (e.g. owner.password).
         foreach ($copy as $k => $v) {
             if (is_array($v)) {
                 $copy[$k] = $this->redactBody($v);
@@ -258,15 +232,11 @@ class PanelDnsApi
         return $copy;
     }
 
-    /**
-     * Returns true if the IPv4 address falls within a private/loopback/reserved range.
-     * Matches the WHMCS module's isPrivateIp() implementation.
-     */
     private static function isPrivateIp(string $ip): bool
     {
         $long = ip2long($ip);
         if ($long === false) {
-            return true; // unparseable — block to be safe
+            return true;
         }
         foreach ([
             ['10.0.0.0',    8],

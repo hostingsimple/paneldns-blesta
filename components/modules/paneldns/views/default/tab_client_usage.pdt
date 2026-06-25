@@ -2,25 +2,17 @@
 /**
  * tab_client_usage.pdt — Client area "DNS Usage" tab.
  *
- * Variables:
- *   $not_provisioned (bool)   — true if no org_id yet
- *   $data            (array)  — org summary from /platform/v1/orgs/{id}/summary
+ * Shows zone and record usage for the sub-client account, plus an SSO
+ * "Manage DNS" button that logs the client into their PanelDNS portal.
+ *
+ * Variables (set by tabClientUsage()):
+ *   $not_provisioned (bool)   — true if no sub_client_id stored yet
+ *   $data            (array)  — from GET /api/v1/sub-clients/{id}/summary:
+ *                               {sub_client, usage: {zones, records}, limits: {zones, records}}
  *   $sso_url         (string) — one-time SSO login URL (may be null)
  *   $error           (string) — error message (may be null)
  */
-
-function pdns_progress_bar(int $used, $limit): string
-{
-    if ($limit === null || $limit <= 0) {
-        // Unlimited plan — show a minimal bar.
-        return '<div class="progress" style="height:8px"><div class="progress-bar bg-success" style="width:5%"></div></div>';
-    }
-    $pct = min(100, round(($used / $limit) * 100));
-    $cls = $pct >= 90 ? 'bg-danger' : ($pct >= 70 ? 'bg-warning' : 'bg-success');
-    return '<div class="progress" style="height:8px"><div class="progress-bar ' . $cls . '" style="width:' . $pct . '%"></div></div>';
-}
 ?>
-
 <div class="paneldns-client-usage" style="padding: 16px 0;">
 
     <?php if ($not_provisioned) { ?>
@@ -34,29 +26,30 @@ function pdns_progress_bar(int $used, $limit): string
     </div>
 
     <?php } else {
-        $org   = $data['org']   ?? [];
-        $plan  = $data['plan']  ?? [];
-        $usage = $data['usage'] ?? [];
+        $sc     = $data['sub_client'] ?? [];
+        $usage  = $data['usage']      ?? [];
+        $limits = $data['limits']     ?? [];
 
-        $status = $org['status'] ?? 'unknown';
+        $status = $sc['status'] ?? 'unknown';
+
+        $zonesUsed  = (int) ($usage['zones']   ?? 0);
+        $recsUsed   = (int) ($usage['records']  ?? 0);
+        $zoneLimit  = isset($limits['zones'])   && $limits['zones']   !== null ? (int) $limits['zones']   : null;
+        $recLimit   = isset($limits['records']) && $limits['records'] !== null ? (int) $limits['records'] : null;
 
         if ($status === 'suspended') { ?>
     <div class="alert alert-warning">
         <?php echo htmlspecialchars(Language::_('paneldns.client_usage.suspended', true), ENT_QUOTES, 'UTF-8'); ?>
     </div>
-        <?php }
-    ?>
+    <?php } ?>
 
     <div class="row">
-        <!-- Plan + Status info card -->
+        <!-- Status + SSO button card -->
         <div class="col-md-4">
             <div class="panel panel-default">
                 <div class="panel-body" style="text-align:center; padding: 24px 16px;">
-                    <h4 style="margin-top:0; color:#2563eb;">
-                        <?php echo htmlspecialchars($plan['name'] ?? '—', ENT_QUOTES, 'UTF-8'); ?>
-                    </h4>
-                    <p style="margin:0; font-size:13px; color:#6b7280;">
-                        Status:
+                    <p style="font-size:13px; color:#6b7280; margin-bottom:4px;">
+                        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.status', true), ENT_QUOTES, 'UTF-8'); ?>:
                         <strong style="color:<?php echo $status === 'active' ? '#16a34a' : ($status === 'suspended' ? '#d97706' : '#9ca3af'); ?>">
                             <?php echo htmlspecialchars(ucfirst($status), ENT_QUOTES, 'UTF-8'); ?>
                         </strong>
@@ -66,31 +59,30 @@ function pdns_progress_bar(int $used, $limit): string
                        class="btn btn-primary btn-sm"
                        style="margin-top:16px;"
                        target="_blank" rel="noopener noreferrer">
-                        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.login_btn', true), ENT_QUOTES, 'UTF-8'); ?> &rarr;
+                        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.manage_dns_button', true), ENT_QUOTES, 'UTF-8'); ?> &rarr;
                     </a>
+                    <p style="font-size:11px; color:#9ca3af; margin-top:8px;">
+                        <?php echo htmlspecialchars(Language::_('paneldns.client_usage.sso_note', true), ENT_QUOTES, 'UTF-8'); ?>
+                    </p>
                     <?php } ?>
                 </div>
             </div>
         </div>
 
-        <!-- Usage stats cards -->
+        <!-- Usage stats -->
         <div class="col-md-8">
             <div class="panel panel-default">
                 <div class="panel-body">
                     <table style="width:100%; border-collapse:collapse;">
                         <?php
-                        $zonesUsed   = (int) ($usage['active_zones'] ?? 0);
-                        $zonesLimit  = isset($plan['zones'])   && $plan['zones']   !== null ? (int) $plan['zones']   : null;
-                        $clientsUsed = (int) ($usage['sub_clients'] ?? 0);
-                        $clientLimit = isset($plan['clients']) && $plan['clients'] !== null ? (int) $plan['clients'] : null;
-                        $apiCalls    = (int) ($usage['api_calls_current_period'] ?? 0);
-
                         $rows = [
-                            [Language::_('paneldns.client_usage.zones', true),   $zonesUsed,   $zonesLimit],
-                            [Language::_('paneldns.client_usage.clients', true),  $clientsUsed, $clientLimit],
+                            [Language::_('paneldns.client_usage.zones', true),   $zonesUsed, $zoneLimit],
+                            [Language::_('paneldns.client_usage.records', true), $recsUsed,  $recLimit],
                         ];
                         foreach ($rows as [$label, $used, $limit]) {
                             $limitStr = $limit !== null ? number_format($limit) : Language::_('paneldns.client_usage.unlimited', true);
+                            $pct      = ($limit !== null && $limit > 0) ? min(100, (int) round($used / $limit * 100)) : 0;
+                            $barCls   = $pct >= 90 ? 'bg-danger' : ($pct >= 70 ? 'bg-warning' : '');
                         ?>
                         <tr style="border-bottom:1px solid #f3f4f6;">
                             <td style="padding:12px 8px; font-weight:600; width:40%;">
@@ -100,18 +92,14 @@ function pdns_progress_bar(int $used, $limit): string
                                 <span style="font-variant-numeric:tabular-nums;">
                                     <?php echo number_format($used); ?> / <?php echo htmlspecialchars($limitStr, ENT_QUOTES, 'UTF-8'); ?>
                                 </span>
-                                <?php echo pdns_progress_bar($used, $limit); ?>
+                                <?php if ($limit !== null && $limit > 0) { ?>
+                                <div class="progress" style="height:6px; margin-top:4px;">
+                                    <div class="progress-bar <?php echo $barCls; ?>" style="width:<?php echo $pct; ?>%"></div>
+                                </div>
+                                <?php } ?>
                             </td>
                         </tr>
                         <?php } ?>
-                        <tr>
-                            <td style="padding:12px 8px; font-weight:600;">
-                                <?php echo htmlspecialchars(Language::_('paneldns.client_usage.api_calls', true), ENT_QUOTES, 'UTF-8'); ?>
-                            </td>
-                            <td style="padding:12px 8px; font-variant-numeric:tabular-nums;">
-                                <?php echo number_format($apiCalls); ?>
-                            </td>
-                        </tr>
                     </table>
                 </div>
             </div>

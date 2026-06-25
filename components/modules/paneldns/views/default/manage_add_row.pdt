@@ -6,9 +6,7 @@
 $vars = $vars ?? [];
 ?>
 <div class="paneldns-add-row">
-    <?php
-    $this->Form->create();
-    ?>
+    <?php $this->Form->create(); ?>
 
     <div class="form-group">
         <label for="name">Server Name</label>
@@ -17,8 +15,8 @@ $vars = $vars ?? [];
                name="name"
                class="form-control"
                value="<?php echo $this->Html->safe($vars['name'] ?? ''); ?>"
-               placeholder="My PanelDNS Server" />
-        <small class="form-text text-muted">A friendly label for this PanelDNS installation.</small>
+               placeholder="My PanelDNS Account" />
+        <small class="form-text text-muted">A friendly label for this PanelDNS reseller account.</small>
     </div>
 
     <div class="form-group">
@@ -35,17 +33,18 @@ $vars = $vars ?? [];
     </div>
 
     <div class="form-group">
-        <label for="platform_key">Platform API Key <span class="required">*</span></label>
+        <label for="api_token">API Token <span class="required">*</span></label>
         <input type="password"
-               id="platform_key"
-               name="platform_key"
+               id="api_token"
+               name="api_token"
                class="form-control"
-               value="<?php echo $this->Html->safe($vars['platform_key'] ?? ''); ?>"
+               value=""
                autocomplete="new-password"
-               placeholder="pdns_platform_..." />
+               placeholder="dnsm_..." />
         <small class="form-text text-muted">
-            Found at <strong>PanelDNS Admin → Settings → API Keys → Platform Key</strong>.
-            Stored encrypted. The key is validated on save by calling the PanelDNS API.
+            Found at <strong>PanelDNS → Settings → API Tokens</strong>.
+            Generate a token with <code>sub_clients:read</code> and <code>sub_clients:write</code> scopes.
+            Stored encrypted. Validated on save by calling the PanelDNS API.
         </small>
     </div>
 

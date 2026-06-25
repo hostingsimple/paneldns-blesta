@@ -1,7 +1,7 @@
 {
     "name": "PanelDNS",
-    "description": "Provisioning module for PanelDNS — sell white-label DNS reseller accounts via the /platform/v1 API.",
-    "version": "1.0.0",
+    "description": "Provisioning module for PanelDNS — sell DNS sub-client accounts via the /api/v1 reseller API.",
+    "version": "2.0.0",
     "authors": [
         {
             "name": "HostingSimple",
