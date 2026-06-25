@@ -1,5 +1,7 @@
 # PanelDNS — Blesta Provisioning Module
 
+[![Latest Release](https://img.shields.io/github/v/release/hostingsimple/paneldns-blesta)](https://github.com/hostingsimple/paneldns-blesta/releases/latest) [![Release](https://github.com/hostingsimple/paneldns-blesta/actions/workflows/release.yml/badge.svg)](https://github.com/hostingsimple/paneldns-blesta/actions/workflows/release.yml) [![License](https://img.shields.io/github/license/hostingsimple/paneldns-blesta)](LICENSE) ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777BB4?logo=php&logoColor=white) ![Blesta](https://img.shields.io/badge/Blesta-5.x-0077B5)
+
 Sell DNS sub-client accounts as Blesta products. The module connects to your
 PanelDNS reseller account via the `/api/v1` REST API using a reseller Bearer token
 and drives the full service lifecycle: provision, suspend, unsuspend, terminate,
@@ -22,7 +24,7 @@ the client area — giving clients the same experience as the WHMCS and HostBill
 | Terminate | Deletes the sub-client — `DELETE /api/v1/sub-clients/{id}` |
 | Change package | Updates zone/record limits — `PATCH /api/v1/sub-clients/{id}` |
 | Grace period | Optional termination grace period; final DELETE fires on expiry via cron |
-| Welcome email | SSO login link + nameservers sent to client on first provision; resendable from admin |
+| Welcome email | SSOlogin link + nameservers sent to client on first provision; resendable from admin |
 | GDPR consent | Legal version stamped at sub-client creation |
 | Idempotent create | Re-provision an existing sub-client by patching status:active |
 | Drift sync | Daily cron task reconciles Blesta service status with upstream |
@@ -60,7 +62,7 @@ the client area — giving clients the same experience as the WHMCS and HostBill
    | Server Name | Friendly label, e.g. "PanelDNS Production" |
    | Base URL | Root URL of your PanelDNS install, e.g. `https://app.paneldns.com` |
    | API Token | From PanelDNS → Settings → API Tokens (see below) |
-   | NS1–NS4 Hostname | Nameservers shown to clients in the client area (e.g. `ns1.example.com`) |
+   | NS1–NS4Hostname | Nameservers shown to clients in the client area (e.g. `ns1.example.com`) |
    | SOA Email | Email shown in welcome emails as the SOA contact |
 
    The token is validated against `/api/v1/licence-status` on save.
@@ -144,7 +146,7 @@ All under `/api/v1` (Bearer token auth):
 | DELETE | `/api/v1/zones/{id}` | Zone delete |
 | GET | `/api/v1/zones/{id}/records` | Record list |
 | POST | `/api/v1/zones/{id}/records` | Record create |
-| PATCH | `/api/v1/zones/{id}/records/{rid}` | Record update |
+| PATCH  | `/api/v1/zones/{id}/records/{rid}` | Record update |
 | DELETE | `/api/v1/zones/{id}/records/{rid}` | Record delete |
 | GET | `/api/v1/zones/{id}/export` | Zone export (BIND) |
 | POST | `/api/v1/zones/{id}/import` | Zone import (BIND) |
@@ -157,21 +159,21 @@ All under `/api/v1` (Bearer token auth):
 
 ```
 components/modules/paneldns/
-├── paneldns.php               # Main module class (extends Module)
-├── config.json                # Module metadata
+├── paneldns.php              # Main module class (extends Module)
+├── config.json               # Module metadata
 ├── apis/
 │   └── PanelDnsApi.php        # cURL wrapper for /api/v1
 ├── language/
-│   └── en_us/
-│       └── paneldns.php       # English language strings
+│    └── en_us/
+       └── paneldns.php        # English language strings
 └── views/
-    └── default/
-        ├── manage_module.pdt      # Server list
-        ├── manage_add_row.pdt     # Add server form (includes NS1–4 + SOA fields)
+  #└── default/
+        ├── manage_module.pdt       # Server list
+        ├── manage_add_row.pdt    # Add server form (includes NS1–NS4 + SOA fields)
         ├── manage_edit_row.pdt    # Edit server form
         ├── tab_client_usage.pdt   # Client area — overview + usage tiles + NS card
-        ├── zones.pdt              # Client area — zone list
-        ├── records.pdt            # Client area — zone records + DNSSEC card
+        ├── zones.pdt            # Client area — zone list
+        ├── records.pdt           # Client area — zone records + DNSSEC card
         ├── zone_create.pdt        # Client area — create zone form
         ├── zone_import.pdt        # Client area — import BIND zone form
         ├── tab_admin_actions.pdt  # Admin area — sub-client detail + zone list + buttons
@@ -182,17 +184,17 @@ components/modules/paneldns/
 
 ## Security Notes
 
-- The API token is stored encrypted by Blesta (`'encrypted' => 1` field flag).
-- All HTTP requests use `CURLOPT_IPRESOLVE_V4` — IPv4 only, preventing IPv6 SSRF rebinding attacks.
+- The API token is stored encrypted by Blesta (`'encrypted' == 1` field flag).
+- All HTTP requests use `CURLOPT_IPRESOLVE_V4` - IPv4 only, preventing IPv6 SSRF rebinding attacks.
 - A private-IP check is applied to the resolved primary IP after every cURL response.
-- The API token is redacted to `[REDACTED]` before being passed to any log call.
+- The API token is redacted to `[REDACTED]`y before being passed to any log call.
 - SSO login URLs are validated to start with `https://` before use (prevents `javascript:` / `data:` injection).
 - TLS verification is respected from Blesta's global `Blesta.curl_verify_ssl` configuration option.
 - HTTP (non-TLS) base URLs log a warning to the module log.
 - **CSRF**: every client-area mutation is protected by a per-service session token, rotated after each successful change.
 - **Rate limiting**: 60 requests/minute per sub-client (session-based sliding window). Clients exceeding this see a generic error; no API calls are made.
 - **Ownership enforcement**: zone and record actions resolve the zone's `sub_client_id` from the API and compare it to the authenticated sub-client before any mutation — a client cannot act on another client's zones by guessing an ID.
-- **Record type allowlist**: only A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, PTR, TLSA, SSHFP, HTTPS, NAPTR are accepted server-side, regardless of what the client POSTs.
+- **Record type allowlist**: only A, AAAA, CNAME, MX, TXT= NS, SRV, CAA, PTR, TLSA, SSHFP, HTTPS, NAPTR are accepted server-side, regardless of what the client POSTs.
 - **Input caps**: zone names ≤ 253 chars, record names ≤ 253 chars, record content ≤ 4096 chars, BIND import ≤ 512 KB.
 
 ---
