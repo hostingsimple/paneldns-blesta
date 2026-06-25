@@ -1,0 +1,146 @@
+﻿<?php
+/**
+ * zones.pdt — Client area DNS zones list page (?pdns=zones).
+ *
+ * Variables:
+ *   $zones          (array)  — [{id, name, status, record_count}]
+ *   $flash_messages (array)  — [{type:'success'|'error', msg:'...'}]
+ *   $csrf     (string) — CSRF token
+ *   $sub_client_id  (int)    — PanelDNS sub-client ID
+ *   $zone_limit     (int)    — max zones allowed (0 = unlimited)
+ *   $zones_used     (int)    — number of zones currently in use
+ */
+?>
+<div class="paneldns-zones" style="max-width:1000px; margin:24px auto;">
+
+    <!-- Nav tabs -->
+    <div style="display:flex; gap:2px; border-bottom:1px solid #d1d5db; margin-bottom:18px; flex-wrap:wrap;">
+        <a href="?" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Overview
+        </a>
+        <a href="?pdns=zones" style="padding:10px 16px; text-decoration:none; background:#fff; border:1px solid #d1d5db; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px; color:#0891b2; font-weight:600; position:relative; top:1px;">
+            DNS Zones
+        </a>
+        <a href="?pdns=zone-create" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Add Zone
+        </a>
+        <a href="?pdns=zone-import" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Import (BIND)
+        </a>
+    </div>
+
+    <?php
+    // Flash messages
+    if (!empty($flash_messages)) {
+        foreach ($flash_messages as $fm) {
+            $fmType = ($fm['type'] ?? 'error') === 'success' ? 'success' : 'danger';
+            echo '<div class="alert alert-' . $fmType . '">'
+                . htmlspecialchars($fm['msg'] ?? '', ENT_QUOTES, 'UTF-8')
+                . '</div>';
+        }
+    }
+    ?>
+
+    <div class="panel panel-default">
+        <div class="panel-body" style="padding:20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+                <div>
+                    <h2 style="margin:0 0 4px; font-size:18px; color:#111827;">Your DNS Zones</h2>
+                    <div style="font-size:12.5px; color:#6b7280;">
+                        <?php
+                        echo htmlspecialchars((string) $zones_used, ENT_QUOTES, 'UTF-8');
+                        if (!empty($zone_limit) && (int) $zone_limit > 0) {
+                            echo ' of ' . htmlspecialchars((string) $zone_limit, ENT_QUOTES, 'UTF-8') . ' zones used';
+                        } else {
+                            echo ' zone' . ((int) $zones_used !== 1 ? 's' : '');
+                        }
+                        ?>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <a href="?pdns=zone-import"
+                       style="padding:7px 14px; color:#374151; text-decoration:none; border:1px solid #d1d5db; border-radius:6px; font-size:13px; font-weight:500;">
+                        Import (BIND)
+                    </a>
+                    <a href="?pdns=zone-create"
+                       style="background:#0891b2; color:#fff; padding:7px 14px; border-radius:6px; text-decoration:none; font-weight:600; font-size:13px;">
+                        + Add Zone
+                    </a>
+                </div>
+            </div>
+
+            <?php if (empty($zones)) { ?>
+            <div style="text-align:center; padding:40px 0; color:#9ca3af; font-size:14px;">
+                No zones yet.
+                <a href="?pdns=zone-create" style="color:#0891b2;">Add your first zone</a>
+                or
+                <a href="?pdns=zone-import" style="color:#0891b2;">import from a BIND file</a>.
+            </div>
+            <?php } else { ?>
+            <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                <thead>
+                    <tr style="border-bottom:1px solid #e5e7eb; background:#f9fafb;">
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Zone</th>
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Status</th>
+                        <th style="text-align:right; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Records</th>
+                        <th style="padding:10px 12px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($zones as $zone) {
+                    $zoneId     = (int) ($zone['id'] ?? 0);
+                    $zoneName   = $zone['name']         ?? '';
+                    $zoneStatus = $zone['status']        ?? 'unknown';
+                    $recCount   = (int) ($zone['record_count'] ?? 0);
+                    $isActive   = ($zoneStatus === 'active');
+                ?>
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:12px;">
+                        <a href="?pdns=records&amp;zone_id=<?php echo $zoneId; ?>"
+                           style="color:#0891b2; text-decoration:none; font-weight:600; font-family:monospace;">
+                            <?php echo htmlspecialchars($zoneName, ENT_QUOTES, 'UTF-8'); ?>
+                        </a>
+                    </td>
+                    <td style="padding:12px;">
+                        <?php if ($isActive) { ?>
+                        <span style="display:inline-block; padding:2px 8px; border-radius:10px; background:#dcfce7; color:#15803d; font-size:11px; font-weight:600;">active</span>
+                        <?php } else { ?>
+                        <span style="display:inline-block; padding:2px 8px; border-radius:10px; background:#f3f4f6; color:#6b7280; font-size:11px; font-weight:600;">
+                            <?php echo htmlspecialchars($zoneStatus, ENT_QUOTES, 'UTF-8'); ?>
+                        </span>
+                        <?php } ?>
+                    </td>
+                    <td style="padding:12px; text-align:right; color:#6b7280; font-size:12.5px;">
+                        <?php echo number_format($recCount); ?>
+                    </td>
+                    <td style="padding:12px; text-align:right; white-space:nowrap;">
+                        <a href="?pdns=records&amp;zone_id=<?php echo $zoneId; ?>"
+                           style="color:#0891b2; text-decoration:none; font-size:13px; font-weight:500; margin-right:8px;">
+                            Manage
+                        </a>
+                        <a href="?pdns=zone-export&amp;zone_id=<?php echo $zoneId; ?>"
+                           style="color:#6b7280; text-decoration:none; font-size:13px; font-weight:500; margin-right:8px;"
+                           title="Download BIND zone file">
+                            Export
+                        </a>
+                        <!-- Delete zone form -->
+                        <form method="POST" action="" style="display:inline;"
+                              onsubmit="return confirm('Delete the entire zone <?php echo addslashes(htmlspecialchars($zoneName, ENT_QUOTES, 'UTF-8')); ?>? This cannot be undone.');">
+                            <input type="hidden" name="pdns_action" value="do-zone-delete">
+                            <input type="hidden" name="csrf"        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="hidden" name="zone_id"     value="<?php echo $zoneId; ?>">
+                            <button type="submit"
+                                    style="background:none; border:none; color:#dc2626; font-size:13px; cursor:pointer; font-weight:500; padding:0;">
+                                Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <?php } ?>
+                </tbody>
+            </table>
+            <?php } ?>
+        </div>
+    </div>
+
+</div>

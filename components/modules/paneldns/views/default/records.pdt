@@ -1,0 +1,362 @@
+﻿<?php
+/**
+ * records.pdt — Client area zone records page (?pdns=records&zone_id=N).
+ *
+ * Variables:
+ *   $zone           (array)      — {id, name, status}
+ *   $records        (array)      — [{id, name, type, content, ttl, priority}]
+ *   $nameservers    (array)      — list of nameserver hostname strings
+ *   $dnssec         (array|null) — {enabled, ds_records:[...], algorithm} or null if not supported
+ *   $flash_messages (array)      — [{type:'success'|'error', msg:'...'}]
+ *   $csrf     (string)     — CSRF token
+ *   $edit_record_id (int|null)   — record ID currently being edited (null = add mode)
+ *   $allowed_types  (array)      — list of allowed record type strings
+ */
+?>
+<div class="paneldns-records" style="max-width:1100px; margin:24px auto;">
+
+    <!-- Nav tabs -->
+    <div style="display:flex; gap:2px; border-bottom:1px solid #d1d5db; margin-bottom:18px; flex-wrap:wrap;">
+        <a href="?" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Overview
+        </a>
+        <a href="?pdns=zones" style="padding:10px 16px; text-decoration:none; background:#fff; border:1px solid #d1d5db; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px; color:#0891b2; font-weight:600; position:relative; top:1px;">
+            DNS Zones
+        </a>
+        <a href="?pdns=zone-create" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Add Zone
+        </a>
+        <a href="?pdns=zone-import" style="padding:10px 16px; text-decoration:none; color:#374151; font-weight:500; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; font-size:14px;">
+            Import (BIND)
+        </a>
+    </div>
+
+    <?php
+    // Flash messages
+    if (!empty($flash_messages)) {
+        foreach ($flash_messages as $fm) {
+            $fmType = ($fm['type'] ?? 'error') === 'success' ? 'success' : 'danger';
+            echo '<div class="alert alert-' . $fmType . '">'
+                . htmlspecialchars($fm['msg'] ?? '', ENT_QUOTES, 'UTF-8')
+                . '</div>';
+        }
+    }
+
+    $zoneId   = (int) ($zone['id']   ?? 0);
+    $zoneName = $zone['name']         ?? '';
+    $editId   = $edit_record_id !== null ? (int) $edit_record_id : null;
+
+    // Find the record being edited for pre-fill
+    $editRecord = null;
+    if ($editId !== null) {
+        foreach ($records as $r) {
+            if ((int) ($r['id'] ?? -1) === $editId) {
+                $editRecord = $r;
+                break;
+            }
+        }
+    }
+
+    $defaultTypes = ['A','AAAA','CNAME','MX','TXT','NS','SRV','CAA','PTR','SSHFP','TLSA','NAPTR','HTTPS'];
+    $typeList     = !empty($allowed_types) ? $allowed_types : $defaultTypes;
+    ?>
+
+    <!-- Zone heading -->
+    <div class="panel panel-default" style="margin-bottom:14px;">
+        <div class="panel-body" style="padding:16px 20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                <h2 style="margin:0; font-size:18px; color:#111827;">
+                    <a href="?pdns=zones" style="color:#9ca3af; text-decoration:none; font-weight:400;">DNS Zones</a>
+                    <span style="color:#d1d5db; margin:0 6px;">&rsaquo;</span>
+                    <span style="font-family:monospace;"><?php echo htmlspecialchars($zoneName, ENT_QUOTES, 'UTF-8'); ?></span>
+                </h2>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:12px; color:#9ca3af;">
+                        <?php
+                        $rCount = count($records);
+                        echo $rCount . ' record' . ($rCount !== 1 ? 's' : '');
+                        ?>
+                    </span>
+                    <!-- EXPORT-01: BIND download link -->
+                    <a href="?pdns=zone-export&amp;zone_id=<?php echo $zoneId; ?>"
+                       style="font-size:12.5px; color:#6b7280; text-decoration:none; border:1px solid #d1d5db; padding:4px 10px; border-radius:5px; font-weight:500;"
+                       title="Download this zone as a BIND-format text file">
+                        &#8615; Export (BIND)
+                    </a>
+                    <a href="?pdns=zone-import&amp;zone_id=<?php echo $zoneId; ?>"
+                       style="font-size:12.5px; color:#6b7280; text-decoration:none; border:1px solid #d1d5db; padding:4px 10px; border-radius:5px; font-weight:500;">
+                        &#8613; Import (BIND)
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NS-CARD-01: nameservers always shown on records page -->
+    <?php if (!empty($nameservers)) { ?>
+    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:14px 16px; margin-bottom:14px;">
+        <div style="font-size:11.5px; font-weight:600; color:#166534; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">
+            &#x1F310; Point <strong><?php echo htmlspecialchars($zoneName, ENT_QUOTES, 'UTF-8'); ?></strong> to these nameservers
+        </div>
+        <?php foreach ($nameservers as $ns) { ?>
+        <div style="font-family:monospace; font-size:13.5px; font-weight:600; color:#111827; padding:3px 0;">
+            <?php echo htmlspecialchars($ns, ENT_QUOTES, 'UTF-8'); ?>
+        </div>
+        <?php } ?>
+    </div>
+    <?php } ?>
+
+    <!-- Records table -->
+    <div class="panel panel-default" style="margin-bottom:14px;">
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+                <tr style="border-bottom:1px solid #e5e7eb; background:#f9fafb;">
+                    <th style="text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Name</th>
+                    <th style="text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Type</th>
+                    <th style="text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Content</th>
+                    <th style="text-align:right; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">TTL</th>
+                    <th style="text-align:right; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280;">Priority</th>
+                    <th style="padding:10px 12px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if (empty($records)) { ?>
+            <tr>
+                <td colspan="6" style="text-align:center; padding:36px 0; color:#9ca3af; font-size:13.5px;">
+                    No records yet. Add one below.
+                </td>
+            </tr>
+            <?php } else {
+                foreach ($records as $r) {
+                    $rId       = (int) ($r['id']       ?? 0);
+                    $rName     = $r['name']              ?? '';
+                    $rType     = $r['type']              ?? '';
+                    $rContent  = $r['content']           ?? '';
+                    $rTtl      = (int) ($r['ttl']        ?? 3600);
+                    $rPriority = isset($r['priority']) && $r['priority'] !== null ? (int) $r['priority'] : null;
+                    $isEditing = ($editId !== null && $editId === $rId);
+            ?>
+            <?php if ($isEditing) { ?>
+            <!-- Inline edit row -->
+            <tr style="background:#fef9c3; border-bottom:1px solid #f3f4f6;">
+                <td colspan="6" style="padding:12px;">
+                    <form method="POST" action="">
+                        <input type="hidden" name="pdns_action" value="do-record-update">
+                        <input type="hidden" name="csrf"        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="zone_id"     value="<?php echo $zoneId; ?>">
+                        <input type="hidden" name="record_id"   value="<?php echo $rId; ?>">
+                        <div style="display:grid; grid-template-columns:1fr 120px 2fr 90px 90px auto; gap:8px; align-items:end;">
+                            <div>
+                                <label style="display:block; font-size:11px; text-transform:uppercase; color:#6b7280; margin-bottom:3px;">Name</label>
+                                <input type="text" name="name" required
+                                       value="<?php echo htmlspecialchars($rName, ENT_QUOTES, 'UTF-8'); ?>"
+                                       style="width:100%; padding:7px 9px; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:11px; text-transform:uppercase; color:#6b7280; margin-bottom:3px;">Type</label>
+                                <select name="type" required style="width:100%; padding:7px 9px; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px; background:#fff;">
+                                    <?php foreach ($typeList as $opt) {
+                                        $sel = ($opt === $rType) ? ' selected' : '';
+                                        echo '<option value="' . htmlspecialchars($opt, ENT_QUOTES, 'UTF-8') . '"' . $sel . '>'
+                                            . htmlspecialchars($opt, ENT_QUOTES, 'UTF-8') . '</option>';
+                                    } ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:11px; text-transform:uppercase; color:#6b7280; margin-bottom:3px;">Content</label>
+                                <input type="text" name="content" required
+                                       value="<?php echo htmlspecialchars($rContent, ENT_QUOTES, 'UTF-8'); ?>"
+                                       style="width:100%; padding:7px 9px; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px; font-family:monospace;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:11px; text-transform:uppercase; color:#6b7280; margin-bottom:3px;">TTL (s)</label>
+                                <input type="number" name="ttl" min="60" max="86400"
+                                       value="<?php echo $rTtl; ?>"
+                                       style="width:100%; padding:7px 9px; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:11px; text-transform:uppercase; color:#6b7280; margin-bottom:3px;">Priority</label>
+                                <input type="number" name="priority" min="0" max="65535"
+                                       value="<?php echo $rPriority !== null ? $rPriority : ''; ?>"
+                                       placeholder="MX/SRV"
+                                       style="width:100%; padding:7px 9px; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px;">
+                            </div>
+                            <div style="display:flex; gap:6px; align-items:flex-end;">
+                                <button type="submit" style="background:#0891b2; color:#fff; padding:7px 12px; border:none; border-radius:5px; font-weight:600; font-size:12.5px; cursor:pointer; white-space:nowrap;">
+                                    Save
+                                </button>
+                                <a href="?pdns=records&amp;zone_id=<?php echo $zoneId; ?>"
+                                   style="padding:7px 12px; color:#6b7280; text-decoration:none; border:1px solid #d1d5db; border-radius:5px; font-size:12.5px; white-space:nowrap;">
+                                    Cancel
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </td>
+            </tr>
+            <?php } else { ?>
+            <!-- Normal display row -->
+            <tr style="border-bottom:1px solid #f3f4f6;">
+                <td style="padding:10px 12px; font-family:monospace;"><?php echo htmlspecialchars($rName, ENT_QUOTES, 'UTF-8'); ?></td>
+                <td style="padding:10px 12px;">
+                    <span style="display:inline-block; padding:1px 7px; border-radius:8px; background:#e5e7eb; color:#374151; font-size:11px; font-weight:600; font-family:monospace;">
+                        <?php echo htmlspecialchars($rType, ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
+                </td>
+                <td style="padding:10px 12px; font-family:monospace; word-break:break-all; color:#374151;">
+                    <?php echo htmlspecialchars($rContent, ENT_QUOTES, 'UTF-8'); ?>
+                </td>
+                <td style="padding:10px 12px; text-align:right; color:#6b7280;"><?php echo $rTtl; ?></td>
+                <td style="padding:10px 12px; text-align:right; color:#6b7280;">
+                    <?php echo $rPriority !== null ? $rPriority : '&mdash;'; ?>
+                </td>
+                <td style="padding:10px 12px; text-align:right; white-space:nowrap;">
+                    <a href="?pdns=records&amp;zone_id=<?php echo $zoneId; ?>&amp;edit=<?php echo $rId; ?>"
+                       style="color:#0891b2; text-decoration:none; font-size:12.5px; font-weight:500; margin-right:10px;">
+                        Edit
+                    </a>
+                    <form method="POST" action="" style="display:inline;"
+                          onsubmit="return confirm('Delete this <?php echo addslashes(htmlspecialchars($rType, ENT_QUOTES, 'UTF-8')); ?> record?');">
+                        <input type="hidden" name="pdns_action" value="do-record-delete">
+                        <input type="hidden" name="csrf"        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="zone_id"     value="<?php echo $zoneId; ?>">
+                        <input type="hidden" name="record_id"   value="<?php echo $rId; ?>">
+                        <button type="submit" style="background:none; border:none; color:#dc2626; cursor:pointer; font-size:12.5px; font-weight:500; padding:0;">
+                            Delete
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            <?php } // end isEditing
+                } // end foreach
+            } // end empty check ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Add record form -->
+    <?php if ($editId === null) { ?>
+    <div class="panel panel-default" style="margin-bottom:14px;">
+        <div class="panel-body" style="padding:20px;">
+            <h3 style="margin:0 0 14px; font-size:15px; color:#111827;">Add a record</h3>
+            <form method="POST" action="">
+                <input type="hidden" name="pdns_action" value="do-record-create">
+                <input type="hidden" name="csrf"        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+                <input type="hidden" name="zone_id"     value="<?php echo $zoneId; ?>">
+                <div style="display:grid; grid-template-columns:1fr 130px 2fr 100px 100px; gap:10px; align-items:end;">
+                    <div>
+                        <label style="display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; margin-bottom:4px;">Name</label>
+                        <input type="text" name="name" required
+                               placeholder="@, www, mail, &hellip;"
+                               value="@"
+                               style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; font-family:monospace;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; margin-bottom:4px;">Type</label>
+                        <select name="type" required style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; background:#fff;">
+                            <?php foreach ($typeList as $opt) {
+                                echo '<option value="' . htmlspecialchars($opt, ENT_QUOTES, 'UTF-8') . '">'
+                                    . htmlspecialchars($opt, ENT_QUOTES, 'UTF-8') . '</option>';
+                            } ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; margin-bottom:4px;">Content</label>
+                        <input type="text" name="content" required
+                               placeholder="1.2.3.4 / mail.example.com / v=spf1 ~all"
+                               style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; font-family:monospace;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; margin-bottom:4px;">TTL (s)</label>
+                        <input type="number" name="ttl" min="60" max="86400" value="3600"
+                               style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; margin-bottom:4px;">Priority</label>
+                        <input type="number" name="priority" min="0" max="65535"
+                               placeholder="MX/SRV only"
+                               style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                    </div>
+                </div>
+                <div style="margin-top:14px;">
+                    <button type="submit" style="background:#0891b2; color:#fff; padding:8px 18px; border:none; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer;">
+                        Add Record
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <?php } ?>
+
+    <!-- DNSSEC-01: DNSSEC signing card -->
+    <?php if ($dnssec !== null) {
+        $dnssecEnabled = !empty($dnssec['enabled']);
+        $dsRecords     = $dnssec['ds_records'] ?? [];
+        $algorithm     = $dnssec['algorithm']  ?? null;
+    ?>
+    <div class="panel panel-default" style="margin-bottom:14px;">
+        <div class="panel-body" style="padding:16px 20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:14px; font-weight:600; color:#111827;">DNSSEC Signing</span>
+                    <?php if ($dnssecEnabled) { ?>
+                    <span style="display:inline-block; padding:2px 9px; border-radius:8px; background:#dcfce7; color:#166534; font-size:11.5px; font-weight:600;">&#10003; Enabled</span>
+                    <?php } else { ?>
+                    <span style="display:inline-block; padding:2px 9px; border-radius:8px; background:#f3f4f6; color:#6b7280; font-size:11.5px; font-weight:600;">Disabled</span>
+                    <?php } ?>
+                </div>
+                <?php
+                $toggleLabel   = $dnssecEnabled ? 'Disable DNSSEC' : 'Enable DNSSEC';
+                $toggleValue   = $dnssecEnabled ? '0' : '1';
+                $toggleConfirm = $dnssecEnabled
+                    ? 'Disable DNSSEC signing on this zone? Remember to remove the DS records from your registrar.'
+                    : 'Enable DNSSEC signing on this zone?';
+                $toggleStyle = $dnssecEnabled
+                    ? 'border:1px solid #fca5a5; background:#fee2e2; color:#991b1b;'
+                    : 'border:1px solid #93c5fd; background:#eff6ff; color:#1d4ed8;';
+                ?>
+                <form method="POST" action=""
+                      onsubmit="return confirm('<?php echo addslashes(htmlspecialchars($toggleConfirm, ENT_QUOTES, 'UTF-8')); ?>');">
+                    <input type="hidden" name="pdns_action" value="do-dnssec-toggle">
+                    <input type="hidden" name="csrf"        value="<?php echo htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="zone_id"     value="<?php echo $zoneId; ?>">
+                    <input type="hidden" name="enable"      value="<?php echo $toggleValue; ?>">
+                    <button type="submit"
+                            style="padding:6px 14px; border-radius:6px; font-size:12.5px; font-weight:600; cursor:pointer; <?php echo $toggleStyle; ?>">
+                        <?php echo htmlspecialchars($toggleLabel, ENT_QUOTES, 'UTF-8'); ?>
+                    </button>
+                </form>
+            </div>
+
+            <?php if ($dnssecEnabled && !empty($dsRecords)) { ?>
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 14px;">
+                <div style="font-size:11.5px; font-weight:600; color:#92400e; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">
+                    &#x26A0;&#xFE0F; Add these DS records at your domain registrar to complete DNSSEC
+                </div>
+                <?php foreach ($dsRecords as $ds) { ?>
+                <div style="font-family:monospace; font-size:12px; color:#1c1917; background:#fff; border:1px solid #fde68a; border-radius:4px; padding:6px 10px; margin-bottom:4px; word-break:break-all; user-select:all;">
+                    <?php echo htmlspecialchars($ds, ENT_QUOTES, 'UTF-8'); ?>
+                </div>
+                <?php } ?>
+                <?php if ($algorithm) { ?>
+                <div style="font-size:11px; color:#78716c; margin-top:6px;">
+                    Algorithm: <?php echo htmlspecialchars($algorithm, ENT_QUOTES, 'UTF-8'); ?>
+                </div>
+                <?php } ?>
+            </div>
+            <?php } elseif ($dnssecEnabled && empty($dsRecords)) { ?>
+            <div style="font-size:12.5px; color:#6b7280; margin-top:4px;">
+                DNSSEC is enabled. DS records are not yet available &mdash; they will appear after the provider has
+                finished signing the zone. Refresh this page in a few seconds to check.
+            </div>
+            <?php } else { ?>
+            <div style="font-size:12px; color:#9ca3af; margin-top:4px;">
+                Enabling DNSSEC allows resolvers to verify that your DNS records haven&rsquo;t been tampered with.
+                After enabling, add the DS records shown here to your domain registrar.
+            </div>
+            <?php } ?>
+        </div>
+    </div>
+    <?php } // end dnssec card ?>
+
+</div>

@@ -4,6 +4,52 @@ All notable changes are documented here. Follows [Keep a Changelog](https://keep
 
 ---
 
+## [3.0.0] — 2026-06-25
+
+Full feature parity with the PanelDNS WHMCS reseller module. Every client-facing and
+admin-facing feature now exists identically across WHMCS, Blesta, and HostBill.
+
+### Added — embedded DNS manager
+
+A full DNS zone and record manager is now embedded in the Blesta client area tab:
+
+- **Zone list** — paginated list of all zones; create / delete / export (BIND) / navigate to records
+- **Zone create** — validated zone name form (253-char limit, no `..`, strict regex)
+- **Zone import** — import BIND zone text into an existing zone (additive; 512 KB cap)
+- **Zone export** — direct `text/plain` BIND file download (streamed, no page reload)
+- **Record list** — tabular view of all records per zone; inline edit form; delete; add record
+- **Record validation** — 13-type allowlist (A AAAA CNAME MX TXT NS SRV CAA PTR TLSA SSHFP HTTPS NAPTR); name ≤ 253 chars; content ≤ 4096 chars; TTL ≥ 60
+- **DNSSEC card** — enable / disable per zone; DS records shown when active
+- **Nameservers card** — per-zone and overview cards showing nameservers to configure at registrar
+- **Zone health widget** — overview tab surfaces up to 5 non-active zones for quick remediation
+- **Ownership enforcement** — every zone / record action verifies the zone's `sub_client_id` matches the authenticated sub-client; no ID-guessing attacks possible
+- **CSRF protection** — per-session per-service token, rotated after every successful mutation
+- **Rate limiting** — 60 req/min per sub-client (session-based sliding window)
+
+### Added — provisioning enhancements
+
+- **Nameserver fields on server row** — `ns1_hostname`–`ns4_hostname` + `soa_email` stored on the server record; surfaced in the overview card and welcome email
+- **Extended package options** — `send_welcome_email` (checkbox), `ns1`–`ns4` hostname overrides, `soa_email`, `auto_create_zone`, `auto_delete_zone`, `grace_period` (0–365 days)
+- **Welcome email on provision** — sends SSO login link + nameservers to the sub-client on first creation; resendable from admin tab
+- **Grace period in terminate** — if `grace_period > 0`, `cancelService()` suspends upstream and stores the deadline date; actual DELETE fires when the grace cron processes it
+- **Idempotent `addService()`** — if `sub_client_id` is already set on the service, PATCHes `status:active` instead of creating a duplicate
+- **GDPR consent stamp** — fetches current legal version from `GET /api/v1/legal-version` and includes `consent_version` in the create payload
+- **Grace period deadline service field** — visible in admin; stamped on termination with grace, cleared on final delete
+
+### Added — cron tasks
+
+- **`paneldns_grace_expiry`** (new, daily 09:00) — scans terminated services with a stored grace deadline; for each where `deadline <= today`, calls `DELETE /api/v1/sub-clients/{id}` and clears the field
+- **`paneldns_drift_sync`** (existing, daily 08:00) — unchanged
+
+### Added — admin tab improvements
+
+- Zone list (first 20 zones) with status badges and "View in PanelDNS" links
+- "Resend Welcome Email" action button
+- "Re-sync Status" action button
+- Grace period deadline shown in service detail
+
+[3.0.0]: https://github.com/hostingsimple/paneldns-blesta/releases/tag/v3.0.0
+
 ## [2.0.0] — 2026-06-25
 
 Complete rewrite targeting the **reseller-tier `/api/v1` API** instead of the platform `/platform/v1` API.

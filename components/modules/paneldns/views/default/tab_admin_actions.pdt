@@ -1,118 +1,190 @@
-<?php
+﻿<?php
 /**
  * tab_admin_actions.pdt — Admin area "PanelDNS" tab.
  *
- * Shows sub-client details and a re-sync button.
+ * Shows sub-client details, a zone list, and action buttons.
  *
  * Variables (set by tabAdminActions()):
  *   $not_provisioned (bool)   — true if no sub_client_id stored yet
  *   $sub_client_id   (int)    — the PanelDNS sub-client ID
  *   $data            (array)  — from GET /api/v1/sub-clients/{id}/summary, or null
+ *                               {sub_client:{id,name,email,status}, usage:{zones,records}, limits:{zones,records}}
  *   $error           (string) — error message (may be null)
- *   $sync_success    (bool)   — true if a manual re-sync just ran
- *   $admin_url       (string) — link to the sub-client in PanelDNS admin (may be null)
+ *   $sync_success    (bool)   — true if a manual re-sync just ran successfully
+ *   $admin_url       (string) — link to sub-client in PanelDNS admin panel (may be null)
+ *   $zones           (array)  — up to 20 zones [{name, status}]
+ *   $flash_messages  (array)  — [{type:'success'|'error', msg:'...'}]
  */
 ?>
 <div class="paneldns-admin-tab" style="padding:16px 0;">
 
+    <?php
+    // Flash messages
+    if (!empty($flash_messages)) {
+        foreach ($flash_messages as $fm) {
+            $fmType = ($fm['type'] ?? 'error') === 'success' ? 'success' : 'danger';
+            echo '<div class="alert alert-' . $fmType . '">'
+                . htmlspecialchars($fm['msg'] ?? '', ENT_QUOTES, 'UTF-8')
+                . '</div>';
+        }
+    }
+    ?>
+
     <?php if ($not_provisioned) { ?>
     <div class="alert alert-info">
-        <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.not_provisioned', true), ENT_QUOTES, 'UTF-8'); ?>
+        This service has not been provisioned yet. Use the "Create" button above to provision the DNS account.
     </div>
 
     <?php } else { ?>
 
-    <?php if ($sync_success) { ?>
+    <?php if (!empty($sync_success)) { ?>
     <div class="alert alert-success">
-        <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.sync_success', true), ENT_QUOTES, 'UTF-8'); ?>
+        Account status re-synced successfully from PanelDNS.
     </div>
     <?php } ?>
 
-    <?php if ($error) { ?>
+    <?php if (!empty($error)) { ?>
     <div class="alert alert-danger">
         <?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?>
     </div>
     <?php } ?>
 
-    <?php if ($data) {
+    <?php if (!empty($data)) {
         $sc     = $data['sub_client'] ?? [];
         $usage  = $data['usage']      ?? [];
         $limits = $data['limits']     ?? [];
         $status = $sc['status'] ?? 'unknown';
-        $statusColour = $status === 'active' ? '#16a34a' : ($status === 'suspended' ? '#d97706' : '#9ca3af');
+
+        $statusColour = $status === 'active'    ? '#16a34a'
+                      : ($status === 'suspended' ? '#d97706'
+                      :                            '#9ca3af');
+
+        $zoneLimit = isset($limits['zones'])   && $limits['zones']   !== null ? (int) $limits['zones']   : null;
+        $recLimit  = isset($limits['records']) && $limits['records'] !== null ? (int) $limits['records'] : null;
     ?>
-    <table class="table" style="font-size:13px; max-width:480px;">
-        <tr>
-            <th style="width:40%; padding:10px 8px; border-top:none;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_id', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px; border-top:none;">
-                <strong><?php echo (int) $sub_client_id; ?></strong>
-            </td>
-        </tr>
-        <tr>
-            <th style="padding:10px 8px;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_name', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px;"><?php echo htmlspecialchars($sc['name'] ?? '—', ENT_QUOTES, 'UTF-8'); ?></td>
-        </tr>
-        <tr>
-            <th style="padding:10px 8px;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_email', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px;"><?php echo htmlspecialchars($sc['email'] ?? '—', ENT_QUOTES, 'UTF-8'); ?></td>
-        </tr>
-        <tr>
-            <th style="padding:10px 8px;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_status', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px;">
-                <span style="color:<?php echo $statusColour; ?>; font-weight:600; text-transform:capitalize;">
-                    <?php echo htmlspecialchars($status, ENT_QUOTES, 'UTF-8'); ?>
-                </span>
-            </td>
-        </tr>
-        <?php
-            $zoneLimit = isset($limits['zones'])   && $limits['zones']   !== null ? (int) $limits['zones']   : null;
-            $recLimit  = isset($limits['records']) && $limits['records'] !== null ? (int) $limits['records'] : null;
-        ?>
-        <tr>
-            <th style="padding:10px 8px;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_zones', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px; font-variant-numeric:tabular-nums;">
-                <?php echo number_format((int) ($usage['zones'] ?? 0)); ?> / <?php echo $zoneLimit !== null ? number_format($zoneLimit) : '&infin;'; ?>
-            </td>
-        </tr>
-        <tr>
-            <th style="padding:10px 8px;">
-                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.field_records', true), ENT_QUOTES, 'UTF-8'); ?>
-            </th>
-            <td style="padding:10px 8px; font-variant-numeric:tabular-nums;">
-                <?php echo number_format((int) ($usage['records'] ?? 0)); ?> / <?php echo $recLimit !== null ? number_format($recLimit) : '&infin;'; ?>
-            </td>
-        </tr>
+    <!-- Sub-client info table -->
+    <table class="table" style="font-size:13px; max-width:520px; margin-bottom:20px;">
+        <tbody>
+            <tr>
+                <th style="width:42%; padding:10px 8px; border-top:none; font-weight:600;">Sub-client ID</th>
+                <td style="padding:10px 8px; border-top:none;">
+                    <strong><?php echo (int) $sub_client_id; ?></strong>
+                </td>
+            </tr>
+            <tr>
+                <th style="padding:10px 8px; font-weight:600;">Name</th>
+                <td style="padding:10px 8px;"><?php echo htmlspecialchars($sc['name'] ?? '&mdash;', ENT_QUOTES, 'UTF-8'); ?></td>
+            </tr>
+            <tr>
+                <th style="padding:10px 8px; font-weight:600;">Email</th>
+                <td style="padding:10px 8px;"><?php echo htmlspecialchars($sc['email'] ?? '&mdash;', ENT_QUOTES, 'UTF-8'); ?></td>
+            </tr>
+            <tr>
+                <th style="padding:10px 8px; font-weight:600;">Status</th>
+                <td style="padding:10px 8px;">
+                    <span style="color:<?php echo $statusColour; ?>; font-weight:600; text-transform:capitalize;">
+                        <?php echo htmlspecialchars($status, ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
+                </td>
+            </tr>
+            <tr>
+                <th style="padding:10px 8px; font-weight:600;">Zones used</th>
+                <td style="padding:10px 8px; font-variant-numeric:tabular-nums;">
+                    <?php echo number_format((int) ($usage['zones'] ?? 0)); ?>
+                    /
+                    <?php echo $zoneLimit !== null ? number_format($zoneLimit) : '&infin;'; ?>
+                </td>
+            </tr>
+            <tr>
+                <th style="padding:10px 8px; font-weight:600;">Records used</th>
+                <td style="padding:10px 8px; font-variant-numeric:tabular-nums;">
+                    <?php echo number_format((int) ($usage['records'] ?? 0)); ?>
+                    /
+                    <?php echo $recLimit !== null ? number_format($recLimit) : '&infin;'; ?>
+                </td>
+            </tr>
+        </tbody>
     </table>
+    <?php } // end $data check ?>
+
+    <!-- Zones (first 20) -->
+    <?php if (!empty($zones)) { ?>
+    <div style="margin-bottom:20px;">
+        <h4 style="font-size:13px; font-weight:600; color:#374151; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em;">
+            Zones (first <?php echo count($zones); ?>)
+        </h4>
+        <table class="table" style="font-size:13px; max-width:640px;">
+            <thead>
+                <tr>
+                    <th style="padding:8px 10px; font-size:11px; text-transform:uppercase; color:#6b7280;">Zone</th>
+                    <th style="padding:8px 10px; font-size:11px; text-transform:uppercase; color:#6b7280;">Status</th>
+                    <?php if (!empty($admin_url)) { ?>
+                    <th style="padding:8px 10px;"></th>
+                    <?php } ?>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($zones as $z) {
+                $zName   = $z['name']   ?? '';
+                $zStatus = $z['status'] ?? 'unknown';
+                $zActive = ($zStatus === 'active');
+            ?>
+            <tr>
+                <td style="padding:8px 10px; font-family:monospace;">
+                    <?php echo htmlspecialchars($zName, ENT_QUOTES, 'UTF-8'); ?>
+                </td>
+                <td style="padding:8px 10px;">
+                    <?php if ($zActive) { ?>
+                    <span style="display:inline-block; padding:1px 7px; border-radius:8px; background:#dcfce7; color:#15803d; font-size:11px; font-weight:600;">active</span>
+                    <?php } else { ?>
+                    <span style="display:inline-block; padding:1px 7px; border-radius:8px; background:#f3f4f6; color:#6b7280; font-size:11px; font-weight:600;">
+                        <?php echo htmlspecialchars($zStatus, ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
+                    <?php } ?>
+                </td>
+                <?php if (!empty($admin_url)) { ?>
+                <td style="padding:8px 10px; text-align:right;">
+                    <a href="<?php echo htmlspecialchars(rtrim($admin_url, '/') . '/zones?search=' . urlencode($zName), ENT_QUOTES, 'UTF-8'); ?>"
+                       target="_blank" rel="noopener noreferrer"
+                       style="color:#0891b2; font-size:12px; text-decoration:none;">
+                        View in PanelDNS &rarr;
+                    </a>
+                </td>
+                <?php } ?>
+            </tr>
+            <?php } ?>
+            </tbody>
+        </table>
+    </div>
     <?php } ?>
 
-    <!-- Actions -->
-    <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <!-- Manual re-sync -->
+    <!-- Action buttons -->
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <!-- Re-sync status -->
         <?php $this->Form->create(); ?>
-        <button type="submit" name="sync" value="1" class="btn btn-default btn-sm">
-            <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.sync_button', true), ENT_QUOTES, 'UTF-8'); ?>
+        <input type="hidden" name="pdns_admin_action" value="resync">
+        <button type="submit" class="btn btn-default btn-sm">
+            &#x21BB; Re-sync Status
         </button>
         <?php $this->Form->end(); ?>
 
-        <!-- Open in PanelDNS admin -->
-        <?php if ($admin_url) { ?>
+        <!-- Resend welcome email -->
+        <?php $this->Form->create(); ?>
+        <input type="hidden" name="pdns_admin_action" value="resend_welcome">
+        <button type="submit" class="btn btn-default btn-sm">
+            &#x2709; Resend Welcome Email
+        </button>
+        <?php $this->Form->end(); ?>
+
+        <!-- View in PanelDNS admin -->
+        <?php if (!empty($admin_url)) { ?>
         <a href="<?php echo htmlspecialchars($admin_url, ENT_QUOTES, 'UTF-8'); ?>"
            class="btn btn-info btn-sm"
            target="_blank" rel="noopener noreferrer">
-            <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.view_in_paneldns', true), ENT_QUOTES, 'UTF-8'); ?> &rarr;
+            View in PanelDNS &rarr;
         </a>
         <?php } ?>
     </div>
 
-    <?php } ?>
+    <?php } // end !not_provisioned ?>
 </div>

@@ -1,7 +1,7 @@
 {
     "name": "PanelDNS",
-    "description": "Provisioning module for PanelDNS — sell DNS sub-client accounts via the /api/v1 reseller API.",
-    "version": "2.0.0",
+    "description": "Provisioning module for PanelDNS — sell DNS sub-client accounts via the /api/v1 reseller API. Includes full embedded DNS zone and record manager in the client area.",
+    "version": "3.0.0",
     "authors": [
         {
             "name": "HostingSimple",

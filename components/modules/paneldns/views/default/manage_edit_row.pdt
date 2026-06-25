@@ -47,6 +47,71 @@ $vars = $vars ?? [];
         </small>
     </div>
 
+    <hr />
+    <h5>Nameservers <small class="text-muted">(shown in welcome emails)</small></h5>
+    <p class="text-muted" style="font-size:.9em;">
+        These override the PanelDNS org's default nameservers for welcome emails sent from this server.
+        Leave blank to use the org's configured nameservers.
+    </p>
+
+    <div class="form-group">
+        <label for="ns1_hostname">NS1 Hostname</label>
+        <input type="text"
+               id="ns1_hostname"
+               name="ns1_hostname"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['ns1_hostname'] ?? ''); ?>"
+               placeholder="ns1.example.com" />
+        <small class="form-text text-muted">Optional. First nameserver hostname shown in welcome emails.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="ns2_hostname">NS2 Hostname</label>
+        <input type="text"
+               id="ns2_hostname"
+               name="ns2_hostname"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['ns2_hostname'] ?? ''); ?>"
+               placeholder="ns2.example.com" />
+        <small class="form-text text-muted">Optional. Second nameserver hostname shown in welcome emails.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="ns3_hostname">NS3 Hostname</label>
+        <input type="text"
+               id="ns3_hostname"
+               name="ns3_hostname"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['ns3_hostname'] ?? ''); ?>"
+               placeholder="ns3.example.com" />
+        <small class="form-text text-muted">Optional. Third nameserver hostname shown in welcome emails.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="ns4_hostname">NS4 Hostname</label>
+        <input type="text"
+               id="ns4_hostname"
+               name="ns4_hostname"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['ns4_hostname'] ?? ''); ?>"
+               placeholder="ns4.example.com" />
+        <small class="form-text text-muted">Optional. Fourth nameserver hostname shown in welcome emails.</small>
+    </div>
+
+    <div class="form-group">
+        <label for="soa_email">SOA Email</label>
+        <input type="email"
+               id="soa_email"
+               name="soa_email"
+               class="form-control"
+               value="<?php echo $this->Html->safe($vars['soa_email'] ?? ''); ?>"
+               placeholder="dns@example.com" />
+        <small class="form-text text-muted">
+            Optional. SOA contact email shown in welcome emails.
+            Defaults to the PanelDNS org's configured value.
+        </small>
+    </div>
+
     <div class="form-group">
         <button type="submit" class="btn btn-primary">Save Changes</button>
         <a href="<?php echo $this->Html->safe($this->base_uri . 'settings/company/modules/manage/'); ?>"
