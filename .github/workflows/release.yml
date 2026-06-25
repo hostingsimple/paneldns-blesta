@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-release:
     name: Build ZIP and create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
       - name: Checkout repository
