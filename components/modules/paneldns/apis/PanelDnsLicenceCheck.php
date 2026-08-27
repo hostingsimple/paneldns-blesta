@@ -10,6 +10,7 @@
  *     server+token identity hash — no Blesta Cache dependency.
  *   - sub_status 'active' or 'trialing'                 -> unlocked
  *   - sub_status 'past_due' within a 7-day grace window -> still unlocked
+ *     (measured from when it FIRST went past due, not from the last fetch)
  *   - past the grace window, or a cache older than 2 days -> locked
  *   - 'free'                                            -> locked from day one
  *
@@ -54,12 +55,29 @@ class PanelDnsLicenceCheck
 
         if (!empty($resp['ok'])) {
             $payload = $resp['data'] ?? [];
+            $newSub  = $payload['sub_status'] ?? 'unknown';
+
+            // GRACE-CLOCK-01: the grace window is measured from when the subscription
+            // FIRST went past due, which must survive every subsequent refresh. Measuring
+            // it from fetched_at instead makes the window unreachable: fetched_at is reset
+            // to now on every successful fetch, and the cache refreshes daily, so the
+            // elapsed time can never exceed CACHE_TTL (1 day) and therefore never reaches
+            // GRACE_SECONDS (7 days). A past-due subscription would stay unlocked forever
+            // while still reporting "7 day(s) left".
+            //
+            // Null when not past due, so returning to active resets the clock and a later
+            // lapse gets a fresh window rather than inheriting the old one.
+            $pastDueSince = $newSub === 'past_due'
+                ? ($cached['past_due_since'] ?? $now)
+                : null;
+
             $entry   = [
-                'fetched_at'   => $now,
-                'sub_status'   => $payload['sub_status']       ?? 'unknown',
-                'modules'      => $payload['modules_unlocked'] ?? [],
-                'expires_at'   => $payload['expires_at']       ?? null,
-                'current_plan' => $payload['current_plan']     ?? null,
+                'fetched_at'     => $now,
+                'past_due_since' => $pastDueSince,
+                'sub_status'     => $newSub,
+                'modules'        => $payload['modules_unlocked'] ?? [],
+                'expires_at'     => $payload['expires_at']       ?? null,
+                'current_plan'   => $payload['current_plan']     ?? null,
             ];
             self::writeCache($cacheKey, $entry);
 
@@ -145,7 +163,11 @@ class PanelDnsLicenceCheck
         }
 
         if ($sub === 'past_due' && $hasModule) {
-            $secondsPastDue = $now - $fetched;
+            // Fall back to fetched_at only for a cache written before past_due_since
+            // existed. That starts the clock now rather than locking immediately, which is
+            // the right way to be wrong: we genuinely do not know when the lapse began.
+            $pastDueSince   = $cached['past_due_since'] ?? $fetched;
+            $secondsPastDue = $now - $pastDueSince;
 
             if ($secondsPastDue < self::GRACE_SECONDS) {
                 $daysLeft = (int) ceil((self::GRACE_SECONDS - $secondsPastDue) / 86400);
