@@ -254,4 +254,17 @@ class PanelDnsApi
         }
         return false;
     }
+
+    /**
+     * Stable, non-reversible identifier for this server + credential pair.
+     *
+     * Used to key the licence cache so two configured PanelDNS servers, or the same
+     * server after a token rotation, never share a cached licence verdict. Truncated
+     * to 16 hex chars: it is a cache key, not a secret, and the full token is never
+     * derivable from it.
+     */
+    public function identityHash(): string
+    {
+        return substr(hash('sha256', $this->baseUrl . '|' . $this->apiToken), 0, 16);
+    }
 }
