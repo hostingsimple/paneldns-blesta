@@ -22,7 +22,7 @@
  * Admin tab:  sub-client detail + zone list + re-sync + resend welcome email.
  * Cron tasks: daily drift sync; daily grace-period expiry termination.
  *
- * @version 3.1.0
+ * @version 3.1.1
  * @link    https://paneldns.com
  */
 

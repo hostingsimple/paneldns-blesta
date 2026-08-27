@@ -4,6 +4,19 @@ All notable changes are documented here. Follows [Keep a Changelog](https://keep
 
 ---
 
+## [3.1.1] — 2026-08-27
+
+### Fixed
+
+- **`components/modules/paneldns/config.json` still declared `3.0.0`.** Blesta reads the
+  module version from `config.json`, not from the class docblock, so v3.1.0 installed and
+  reported itself as 3.0.0 — and Blesta would not have offered the upgrade. The v3.1.0 tag
+  and release remain published but are superseded by this one; install v3.1.1.
+
+  Both version identifiers are now bumped together. The docblock alone is not the version.
+
+---
+
 ## [3.1.0] — 2026-08-27
 
 ### Fixed — the module did not load at all on PHP 8
