@@ -415,6 +415,20 @@ class Paneldns extends Module
 
         $api = $this->makeApiFromRow($row);
 
+        // LICENCE-BLESTA-01: gate provisioning on an active PanelDNS subscription.
+        //
+        // Only addService() is gated. suspendService, unsuspendService, cancelService
+        // and every read path stay open deliberately: an expired subscription must not
+        // strand existing customers or block an orderly wind-down. It is also checked
+        // AFTER the no-provision early return above, so importing an existing
+        // sub-client by ID keeps working while provisioning is locked.
+        require_once dirname(__FILE__) . DS . 'apis' . DS . 'PanelDnsLicenceCheck.php';
+        $licenceError = PanelDnsLicenceCheck::gateOrError($api);
+        if ($licenceError !== null) {
+            $this->Input->setErrors(['module' => ['licence' => $licenceError]]);
+            return;
+        }
+
         // Derive sub-client name + email from the Blesta client record.
         $client    = $vars['client'] ?? [];
         $email     = $vars['sub_client_email'] ?? ($client['email'] ?? '');
