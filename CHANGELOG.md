@@ -4,6 +4,46 @@ All notable changes are documented here. Follows [Keep a Changelog](https://keep
 
 ---
 
+## [3.1.0] — 2026-08-27
+
+### Fixed — the module did not load at all on PHP 8
+
+- **`components/modules/paneldns/paneldns.php` failed to parse on every PHP 8 release.**
+
+  ```
+  PHP Fatal error: Unparenthesized `a ? b : c ?: d` is not supported
+  ```
+
+  Nested ternaries without explicit parentheses were deprecated in PHP 7.4 and became a
+  **compile-time** error in PHP 8.0. Because it is a parse error, execution never had to
+  reach the line: the file never loaded and every Blesta hook into this module fatalled.
+  Blesta 5 requires PHP 8, so the module was non-functional on every supported platform.
+  Behaviour is unchanged — the intended precedence was already company → "First Last" →
+  email, which the parentheses now state explicitly.
+
+### Added — licence gating
+
+- **`PanelDnsLicenceCheck`** — verifies the install is paired with an active PanelDNS
+  subscription. This module previously enforced nothing: its API client defined
+  `getLicenceStatus()` and nothing in the repo called it.
+  - `active` / `trialing` → unlocked; `past_due` → 7-day grace; `free` / `cancelled` → locked
+  - 24h cache; a cached verdict is trusted for at most 2 days when the server is unreachable
+  - Gates **provisioning only** (`addService()`). Suspend, unsuspend, cancel and all read
+    paths stay open, so a lapsed subscription never strands existing customers.
+  - Requires PanelDNS **v3.91.8+**, which is the first release to emit the `blesta` slug in
+    `modules_unlocked`. Against an older server the slug is absent and provisioning locks
+    even on a healthy subscription (LICENCE-SLUG-01).
+- Grace is measured from `first_past_due_at` — when the lapse was first observed — matching
+  the WHMCS, reseller-WHMCS and HostBill modules. Simulated day 0→365: locks on day 7.
+
+### Fixed
+
+- **`curl_close()` removed** (PHP8-CURL-01). Deprecated in PHP 8.5, emitting a notice on
+  every API call.
+- `@version` docblock corrected from a stale `2.1.0` to match the release line.
+
+---
+
 ## [3.0.0] — 2026-06-25
 
 Full feature parity with the PanelDNS WHMCS reseller module. Every client-facing and
