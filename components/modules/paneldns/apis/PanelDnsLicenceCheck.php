@@ -67,13 +67,13 @@ class PanelDnsLicenceCheck
             //
             // Null when not past due, so returning to active resets the clock and a later
             // lapse gets a fresh window rather than inheriting the old one.
-            $pastDueSince = $newSub === 'past_due'
-                ? ($cached['past_due_since'] ?? $now)
+            $firstPastDueAt = $newSub === 'past_due'
+                ? ($cached['first_past_due_at'] ?? $now)
                 : null;
 
             $entry   = [
                 'fetched_at'     => $now,
-                'past_due_since' => $pastDueSince,
+                'first_past_due_at' => $firstPastDueAt,
                 'sub_status'     => $newSub,
                 'modules'        => $payload['modules_unlocked'] ?? [],
                 'expires_at'     => $payload['expires_at']       ?? null,
@@ -163,11 +163,11 @@ class PanelDnsLicenceCheck
         }
 
         if ($sub === 'past_due' && $hasModule) {
-            // Fall back to fetched_at only for a cache written before past_due_since
+            // Fall back to fetched_at only for a cache written before first_past_due_at
             // existed. That starts the clock now rather than locking immediately, which is
             // the right way to be wrong: we genuinely do not know when the lapse began.
-            $pastDueSince   = $cached['past_due_since'] ?? $fetched;
-            $secondsPastDue = $now - $pastDueSince;
+            $firstPastDueAt   = $cached['first_past_due_at'] ?? $fetched;
+            $secondsPastDue = $now - $firstPastDueAt;
 
             if ($secondsPastDue < self::GRACE_SECONDS) {
                 $daysLeft = (int) ceil((self::GRACE_SECONDS - $secondsPastDue) / 86400);
