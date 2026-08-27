@@ -435,10 +435,14 @@ class Paneldns extends Module
         $firstName = $client['firstname'] ?? '';
         $lastName  = $client['lastname']  ?? '';
         $company   = $client['company']   ?? '';
+        // PHP8-PARSE-01: the inner fallback MUST stay parenthesised. Written as
+        // `$a ? $b : $c ?: $d` this is an unparenthesised nested ternary, which PHP 8
+        // rejects at COMPILE time - so the whole module file failed to parse and every
+        // Blesta hook into it fatalled, on every PHP 8 release. Blesta 5 requires PHP 8.
         $name      = $vars['sub_client_name'] ?? (
             !empty($company)
                 ? $company
-                : trim("{$firstName} {$lastName}") ?: $email
+                : (trim("{$firstName} {$lastName}") ?: $email)
         );
 
         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
