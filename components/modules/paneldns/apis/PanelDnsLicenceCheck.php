@@ -50,7 +50,7 @@ class PanelDnsLicenceCheck
             return self::interpret($cached, $now);
         }
 
-        $resp = $api->licenceStatus();
+        $resp = $api->getLicenceStatus();
 
         if (!empty($resp['ok'])) {
             $payload = $resp['data'] ?? [];
