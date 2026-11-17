@@ -10,7 +10,8 @@ the client area — giving clients the same experience as the WHMCS and HostBill
 
 **Blesta version:** 5.x  
 **PHP version:** 8.0–8.2  
-**PanelDNS:** 3.104.1 or later recommended (see [Account linking](#account-linking)); the module works with any version exposing the `/api/v1` sub-client endpoints
+**PanelDNS:** 3.104.1 or later recommended (see [Account linking](#account-linking)); the module works with any version exposing the `/api/v1` sub-client endpoints  
+**Status:** 3.2.1 is the first version that loads on Blesta. Earlier versions failed at class load (see the CHANGELOG). It has been checked against Blesta's module template and a stock module, but **not yet on a live Blesta install**, so smoke-test it before selling it.
 
 ---
 

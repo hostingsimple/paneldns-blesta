@@ -30,7 +30,7 @@
  * email or by any value from $vars — billing systems do not verify client emails, and
  * $vars on an order carries the customer's own form input.
  *
- * @version 3.2.0
+ * @version 3.2.1
  * @link    https://paneldns.com
  */
 
@@ -46,6 +46,10 @@ class Paneldns extends Module
 
     public function __construct()
     {
+        // BLESTA-LOAD-04: $this->Input is used throughout (row and service validation,
+        // every setErrors()) but was never loaded, so the first validation fataled on a
+        // null. Blesta's module template and stock modules load it here.
+        Loader::loadComponents($this, ['Input']);
         $this->loadConfig(dirname(__FILE__) . DS . 'config.json');
         Language::loadLang('paneldns', null, dirname(__FILE__) . DS . 'language' . DS);
     }
@@ -56,7 +60,7 @@ class Paneldns extends Module
 
     public function manageModule($module, array &$vars): string
     {
-        $this->view = $this->makeView('manage_module', 'default', '');
+        $this->view = $this->moduleView('manage_module');
         $this->view->set('module', $module);
         $this->view->set('vars', $vars);
         return $this->view->fetch();
@@ -64,7 +68,7 @@ class Paneldns extends Module
 
     public function manageAddRow(array &$vars): string
     {
-        $this->view = $this->makeView('manage_add_row', 'default', '');
+        $this->view = $this->moduleView('manage_add_row');
         $this->view->set('vars', $vars);
         return $this->view->fetch();
     }
@@ -83,7 +87,7 @@ class Paneldns extends Module
                 'soa_email'    => $module_row->meta->soa_email    ?? '',
             ];
         }
-        $this->view = $this->makeView('manage_edit_row', 'default', '');
+        $this->view = $this->moduleView('manage_edit_row');
         $this->view->set('module_row', $module_row);
         $this->view->set('vars', $vars);
         return $this->view->fetch();
@@ -666,7 +670,12 @@ class Paneldns extends Module
         }
     }
 
-    public function validateService($package, array $vars = null): array
+    /**
+     * BLESTA-LOAD-05: Blesta treats the return as pass/fail (the module template returns
+     * `$this->Input->validates($vars)`, and errors are read from `$this->Input`). This
+     * returned the error array, so a VALID order returned [] (falsy) and was refused.
+     */
+    public function validateService($package, array $vars = null): bool
     {
         $rules = [
             'sub_client_email' => [
@@ -679,9 +688,7 @@ class Paneldns extends Module
         ];
 
         $this->Input->setRules($rules);
-        $this->Input->validates($vars);
-
-        return $this->Input->errors() ?? [];
+        return $this->Input->validates($vars);
     }
 
     // =========================================================================
@@ -715,7 +722,7 @@ class Paneldns extends Module
         $id = $this->getSubClientId($service);
 
         if (!$id) {
-            $this->view = $this->makeView('tab_client_usage', 'default', '');
+            $this->view = $this->moduleView('tab_client_usage');
             $this->view->set('not_provisioned', true);
             return $this->view->fetch();
         }
@@ -804,7 +811,7 @@ class Paneldns extends Module
         // NS card
         $nameservers = $this->fetchNameservers($api, $subClientId);
 
-        $this->view = $this->makeView('tab_client_usage', 'default', '');
+        $this->view = $this->moduleView('tab_client_usage');
         $this->view->set('not_provisioned', false);
         $this->view->set('data', $data);
         $this->view->set('sso_url', $ssoUrl);
@@ -833,7 +840,7 @@ class Paneldns extends Module
             $error = 'Unable to load zones. Please try again later.';
         }
 
-        $this->view = $this->makeView('tab_client_zones', 'default', '');
+        $this->view = $this->moduleView('zones');
         $this->view->set('zones', $zones);
         $this->view->set('error', $error);
         $this->view->set('service_id', $serviceId);
@@ -879,7 +886,7 @@ class Paneldns extends Module
         $nameservers = $this->fetchNameservers($api, $subClientId);
         $editRecordId = (int) ($_GET['edit'] ?? 0) ?: null;
 
-        $this->view = $this->makeView('tab_client_records', 'default', '');
+        $this->view = $this->moduleView('records');
         $this->view->set('zone', $zone);
         $this->view->set('records', $records);
         $this->view->set('error', $error);
@@ -895,7 +902,7 @@ class Paneldns extends Module
 
     private function renderZoneCreate(int $serviceId): string
     {
-        $this->view = $this->makeView('tab_client_zone_create', 'default', '');
+        $this->view = $this->moduleView('zone_create');
         $this->view->set('service_id', $serviceId);
         $this->view->set('csrf', $this->csrfToken($serviceId));
         $this->view->set('flash', $this->getFlash($serviceId));
@@ -912,7 +919,7 @@ class Paneldns extends Module
             // Non-fatal — zone picker will be empty.
         }
 
-        $this->view = $this->makeView('tab_client_zone_import', 'default', '');
+        $this->view = $this->moduleView('zone_import');
         $this->view->set('zones', $zones);
         $this->view->set('service_id', $serviceId);
         $this->view->set('csrf', $this->csrfToken($serviceId));
@@ -1278,7 +1285,7 @@ class Paneldns extends Module
      */
     public function tabAdminActions($package, $service, array $get = null, array $post = null, array $files = null): string
     {
-        $this->view = $this->makeView('tab_admin_actions', 'default', '');
+        $this->view = $this->moduleView('tab_admin_actions');
 
         $id          = $this->getSubClientId($service);
         $linkError   = null;
@@ -1383,32 +1390,47 @@ class Paneldns extends Module
         return $this->view->fetch();
     }
 
-    public function getClientServiceInfo($service, $package): array
+    /**
+     * BLESTA-LOAD-06: Blesta renders the return value as HTML (the module template returns
+     * `$this->view->fetch()`), so these returned an array that never displayed. They now
+     * render service_info.pdt, which escapes every label and value itself — values are
+     * passed raw here so nothing is escaped twice.
+     */
+    public function getClientServiceInfo($service, $package): string
     {
         $email = $this->getServiceField($service, 'sub_client_email') ?: '—';
         $id    = $this->getSubClientId($service);
 
-        return [
-            Language::_('paneldns.service_fields.sub_client_email', true) => htmlspecialchars($email, ENT_QUOTES, 'UTF-8'),
+        return $this->renderServiceInfo([
+            Language::_('paneldns.service_fields.sub_client_email', true) => (string) $email,
             'Sub-client ID' => $id ? (string) $id : '—',
-        ];
+        ]);
     }
 
-    public function getAdminServiceInfo($service, $package): array
+    public function getAdminServiceInfo($service, $package): string
     {
         $email    = $this->getServiceField($service, 'sub_client_email') ?: '—';
         $id       = $this->getSubClientId($service);
-        $zl       = $package->meta->zone_limit  ?? '0';
-        $mr       = $package->meta->max_records ?? '0';
+        $zl       = (string) ($package->meta->zone_limit  ?? '0');
+        $mr       = (string) ($package->meta->max_records ?? '0');
         $deadline = $this->getServiceField($service, 'grace_period_deadline') ?: '—';
 
-        return [
-            Language::_('paneldns.service_fields.sub_client_email', true) => htmlspecialchars($email, ENT_QUOTES, 'UTF-8'),
+        return $this->renderServiceInfo([
+            Language::_('paneldns.service_fields.sub_client_email', true) => (string) $email,
             'Sub-client ID'         => $id ? (string) $id : '—',
-            'Zone limit'            => $zl === '0' ? '∞' : htmlspecialchars($zl, ENT_QUOTES, 'UTF-8'),
-            'Record limit'          => $mr === '0' ? '∞' : htmlspecialchars($mr, ENT_QUOTES, 'UTF-8'),
-            'Grace period deadline' => htmlspecialchars($deadline, ENT_QUOTES, 'UTF-8'),
-        ];
+            'Zone limit'            => $zl === '0' ? '∞' : $zl,
+            'Record limit'          => $mr === '0' ? '∞' : $mr,
+            'Grace period deadline' => (string) $deadline,
+        ]);
+    }
+
+    /** @param array<string,string> $rows label => value, unescaped (the view escapes) */
+    private function renderServiceInfo(array $rows): string
+    {
+        $this->moduleView('service_info');
+        $this->view->set('service_info', $rows);
+
+        return $this->view->fetch();
     }
 
     // =========================================================================
@@ -1624,7 +1646,7 @@ class Paneldns extends Module
         $errors     = 0;
         $limit      = 100;
 
-        $moduleRows = $this->getModuleRows();
+        $moduleRows = $this->allModuleRows();
         if (empty($moduleRows)) {
             return;
         }
@@ -1704,7 +1726,7 @@ class Paneldns extends Module
         $limit     = 100;
         $today     = date('Y-m-d');
 
-        $moduleRows = $this->getModuleRows();
+        $moduleRows = $this->allModuleRows();
         if (empty($moduleRows)) {
             return;
         }
@@ -2380,9 +2402,32 @@ class Paneldns extends Module
         }
     }
 
-    private function getModuleRows(): array
+    /**
+     * BLESTA-LOAD-03: was `private function getModuleRows()`, redeclaring a method the
+     * Module base class already provides (stock modules call `$this->getModuleRows()` and
+     * `$this->getModuleRows($vars->module_group)` without defining it). PHP refuses a
+     * subclass that narrows an inherited method's visibility, so the class failed to load.
+     */
+    private function allModuleRows(): array
     {
-        $rows = parent::getModuleRows();
+        $rows = $this->getModuleRows();
         return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * BLESTA-LOAD-01: build a view the way Blesta's own module template does
+     * (plugin-extension_generator lib/templates/module/module.php.tpl): a View on the
+     * module's default view directory, with the Form and Html helpers loaded onto it.
+     * The module used to call `$this->makeView()`, which neither it nor the Module base
+     * class defines, so every admin screen and client tab fataled.
+     */
+    private function moduleView(string $name): View
+    {
+        $this->view = new View($name, 'default');
+        $this->view->base_uri = $this->base_uri;
+        $this->view->setDefaultView('components' . DS . 'modules' . DS . 'paneldns' . DS);
+        Loader::loadHelpers($this, ['Form', 'Html']);
+
+        return $this->view;
     }
 }

@@ -176,7 +176,7 @@ class PanelDnsApi
         $headers = [
             'Accept: application/json',
             'Authorization: Bearer ' . $this->apiToken,
-            'User-Agent: paneldns-blesta/3.2.0',
+            'User-Agent: paneldns-blesta/3.2.1',
         ];
 
         $opts = [
