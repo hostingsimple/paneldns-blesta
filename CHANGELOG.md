@@ -4,6 +4,54 @@ All notable changes are documented here. Follows [Keep a Changelog](https://keep
 
 ---
 
+## [3.2.1] — 2026-11-18
+
+### Fixed — the module could not load on Blesta
+
+3.2.0 was never released on its own: it carried the security fix below but still could not
+load, and 3.2.1 is the first release with both. Six defects, each checked against Blesta's own
+module template (`blesta/plugin-extension_generator`, `lib/templates/module/module.php.tpl`)
+and a stock module (`blesta/module-cyberpanel`):
+
+- **BLESTA-LOAD-03, a fatal at class load.** `getModuleRows()` was redeclared `private` over
+  the `Module` base class method of the same name. Stock modules call
+  `$this->getModuleRows()` without defining it. PHP refuses the class:
+  `Access level to Paneldns::getModuleRows() must be public (as in class Module)`. The
+  helper is now `allModuleRows()`, and it calls the inherited method.
+- **BLESTA-LOAD-01.** Every view was built with `$this->makeView()`, which neither the
+  module nor `Module` defines, so every admin screen and client tab fataled. A
+  `moduleView()` helper does what the template does: `new View($name, 'default')`,
+  `setDefaultView('components/modules/paneldns/')`, then `Loader::loadHelpers($this,
+  ['Form', 'Html'])`.
+- **BLESTA-LOAD-02.** Four client views were requested under names with no file
+  (`tab_client_zones`, `tab_client_records`, `tab_client_zone_create`,
+  `tab_client_zone_import`). They now use `zones`, `records`, `zone_create` and
+  `zone_import`.
+- **BLESTA-LOAD-04.** The `Input` component was never loaded, so the first
+  `$this->Input->setRules()` or `setErrors()` (adding a server, validating an order) fataled
+  on null. The constructor now calls `Loader::loadComponents($this, ['Input'])`, as the
+  template and stock modules do.
+- **BLESTA-LOAD-05.** `validateService()` returned the error array, so a valid order
+  returned `[]` (falsy) and was refused. It now returns `$this->Input->validates($vars)`,
+  as the template does. Errors stay on `$this->Input`.
+- **BLESTA-LOAD-06.** `getClientServiceInfo()` and `getAdminServiceInfo()` returned
+  arrays, but Blesta renders the return value as HTML. They now render
+  `service_info.pdt` (which was unused) and pass values unescaped, because the view
+  escapes them. Pre-escaping them would have escaped them twice.
+
+### Tested
+
+A load test with Blesta stubbed after the template (not committed). The stub `Module`
+declares `getModuleRows()` public, and the stub `View` fails when a view file is missing.
+Results: **20 passed** on 3.2.1. On 3.2.0 PHP stops at class load with the access-level
+fatal above. **Not yet run on a live Blesta install.** The first live install should go
+through: add a server, add a package, order and provision, open the client tab, and SSO.
+
+### Known
+
+- The module uses implicitly nullable parameters (`array $vars = null`), which PHP 8.4
+  reports as deprecated. Blesta's own template does the same. They're notices, not errors.
+
 ## [3.2.0] — 2026-11-18
 
 ### Security — a service could be bound to another customer's PanelDNS sub-client
@@ -63,10 +111,10 @@ the Platform API (`/platform/v1/orgs`), which other billing integrations use.
 - The sub-client email and name now come from the Blesta client record (`client_id`).
   Previously they came from a `$vars['client']` array that Blesta does not pass.
 
-### Known issues (not addressed in this release)
+### Known issues (fixed in 3.2.1)
 
 The module still has defects unrelated to this fix that likely stop it from running on a
-live Blesta install:
+live Blesta install (all fixed in 3.2.1, along with two more found there):
 
 - `makeView()` is called for every view but is not defined in this module. Blesta's own
   modules build views with `new View(...)`.
