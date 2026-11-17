@@ -281,7 +281,7 @@ $lang['paneldns.!error.sub_client_email.format']      = 'The email address is no
 
 // Sub-client create failures (SEC-LINK-02). Provisioning stops; nothing is retried.
 $lang['paneldns.!error.create.failed']                  = 'PanelDNS provisioning failed. See the module log for details.';
-$lang['paneldns.!error.create.account_email_exists']    = 'A PanelDNS account already uses %1$s. For security PanelDNS will not attach an existing account to a new org automatically. Use a different client email or link the org manually in PanelDNS admin.';
+$lang['paneldns.!error.create.account_email_exists']    = 'A PanelDNS account already uses %1$s. For security PanelDNS will not attach an existing account to a new org automatically. Use a different client email. If you have confirmed the customer owns that account, link it with Link sub-client on this service\'s admin tab.';
 $lang['paneldns.!error.create.sub_client_email_exists'] = 'A PanelDNS sub-client already uses %1$s in this reseller account. For security this module will not attach an existing sub-client to a new service automatically. Use a different client email, or, after confirming the existing sub-client belongs to this customer, link it from this service\'s PanelDNS admin tab.';
 $lang['paneldns.!error.grace_period.format']          = 'Termination Grace Period must be a whole number (0 or greater).';
 $lang['paneldns.!error.ns1_hostname.format']          = 'NS1 Hostname must be a valid hostname.';
