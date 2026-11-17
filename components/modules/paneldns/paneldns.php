@@ -19,10 +19,18 @@
  *   changeServicePackage() → PATCH /api/v1/sub-clients/{id}  {zone_limit, max_records}
  *
  * Client tab: full embedded DNS manager (zone list, record editor, DNSSEC, import/export).
- * Admin tab:  sub-client detail + zone list + re-sync + resend welcome email.
+ * Admin tab:  sub-client detail + zone list + re-sync + resend welcome email, and an
+ *             explicit "link existing sub-client by ID" action for unlinked services.
  * Cron tasks: daily drift sync; daily grace-period expiry termination.
  *
- * @version 3.1.1
+ * SEC-LINK-01 (account linking): a Blesta service is only ever bound to the PanelDNS
+ * sub-client whose PanelDNS-issued ID is stored in that service's sub_client_id field.
+ * That field is written by exactly two paths: addService() after PanelDNS creates a NEW
+ * sub-client, and the admin-only link action in tabAdminActions(). Nothing links by
+ * email or by any value from $vars — billing systems do not verify client emails, and
+ * $vars on an order carries the customer's own form input.
+ *
+ * @version 3.2.0
  * @link    https://paneldns.com
  */
 
@@ -390,20 +398,37 @@ class Paneldns extends Module
     /**
      * Provision a new PanelDNS sub-client.
      *
-     * Idempotent: if sub_client_id is already in $vars (manual re-provision),
-     * PATCHes the existing sub-client to active instead of creating a duplicate.
-     * Fetches org nameservers after creation and stores them in service notes.
+     * Always creates a NEW sub-client (SEC-LINK-01). It never attaches the service to
+     * an existing PanelDNS sub-client, whatever $vars contains: Blesta documents $vars
+     * as "user supplied info", and on a client order it is the customer's own form
+     * input. To bind an existing sub-client to a service, an admin uses the explicit
+     * "Link existing sub-client" action on the service's PanelDNS admin tab.
+     *
      * Sends welcome email with SSO link if send_welcome_email package option is set.
      * Fetches legal/consent version and includes it in the create payload.
+     *
+     * BLESTA-SIG-01: the signature MUST match Module::addService(). It previously read
+     * ($package, $service, $vars, ...), which shifted every argument by one: $vars
+     * received the parent package, so 'use_module' was never seen.
      */
-    public function addService($package, $service = null, array $vars = null, $parent_package = null, $parent_service = null)
+    public function addService($package, array $vars = null, $parent_package = null, $parent_service = null, $status = 'pending')
     {
-        // No-provision path: store supplied IDs as-is.
+        $vars = (array) $vars;
+
+        // No-provision path: the admin unticked "use module", or this is a pending /
+        // in_review order (Blesta forces use_module=false for those, so customers reach
+        // this branch with their own order-form input).
+        //
+        // SEC-LINK-01: sub_client_id is deliberately NOT taken from $vars here. Storing
+        // a caller-supplied ID would bind this service — and, through the client tab and
+        // SSO, this customer — to whichever sub-client that ID names. The service starts
+        // unlinked; addService() with use_module=true creates its sub-client, or an admin
+        // links an existing one explicitly from the admin tab.
         if (($vars['use_module'] ?? '') !== 'true') {
             return [
-                ['key' => 'sub_client_id',          'value' => $vars['sub_client_id']          ?? '', 'encrypted' => 0],
-                ['key' => 'sub_client_email',        'value' => $vars['sub_client_email']        ?? '', 'encrypted' => 0],
-                ['key' => 'grace_period_deadline',   'value' => '',                                    'encrypted' => 0],
+                ['key' => 'sub_client_id',         'value' => '',                                       'encrypted' => 0],
+                ['key' => 'sub_client_email',      'value' => (string) ($vars['sub_client_email'] ?? ''), 'encrypted' => 0],
+                ['key' => 'grace_period_deadline', 'value' => '',                                       'encrypted' => 0],
             ];
         }
 
@@ -420,8 +445,9 @@ class Paneldns extends Module
         // Only addService() is gated. suspendService, unsuspendService, cancelService
         // and every read path stay open deliberately: an expired subscription must not
         // strand existing customers or block an orderly wind-down. It is also checked
-        // AFTER the no-provision early return above, so importing an existing
-        // sub-client by ID keeps working while provisioning is locked.
+        // AFTER the no-provision early return above, and the admin-tab "link existing
+        // sub-client" action is not gated, so attaching an existing sub-client keeps
+        // working while provisioning is locked.
         require_once dirname(__FILE__) . DS . 'apis' . DS . 'PanelDnsLicenceCheck.php';
         $licenceError = PanelDnsLicenceCheck::gateOrError($api);
         if ($licenceError !== null) {
@@ -429,12 +455,18 @@ class Paneldns extends Module
             return;
         }
 
-        // Derive sub-client name + email from the Blesta client record.
-        $client    = $vars['client'] ?? [];
-        $email     = $vars['sub_client_email'] ?? ($client['email'] ?? '');
-        $firstName = $client['firstname'] ?? '';
-        $lastName  = $client['lastname']  ?? '';
-        $company   = $client['company']   ?? '';
+        // Derive sub-client name + email from the Blesta client record. Blesta passes
+        // client_id, not a client array, so the record is loaded here.
+        //
+        // The email is customer-controlled (Blesta does not verify it). That is safe
+        // ONLY because it is used to CREATE a new sub-client — PanelDNS rejects a
+        // duplicate within the reseller org and never hands back an existing account.
+        // It must never be used to look up or select an existing PanelDNS record.
+        $client    = $this->loadBlestaClient($vars);
+        $email     = trim((string) (($vars['sub_client_email'] ?? '') !== '' ? $vars['sub_client_email'] : ($client['email'] ?? '')));
+        $firstName = $client['first_name'] ?? '';
+        $lastName  = $client['last_name']  ?? '';
+        $company   = $client['company']    ?? '';
         // PHP8-PARSE-01: the inner fallback MUST stay parenthesised. Written as
         // `$a ? $b : $c ?: $d` this is an unparenthesised nested ternary, which PHP 8
         // rejects at COMPILE time - so the whole module file failed to parse and every
@@ -450,23 +482,12 @@ class Paneldns extends Module
             return;
         }
 
-        // IDEMPOTENT-01: if sub_client_id already exists on $vars, re-activate instead of creating.
-        $existingId = isset($vars['sub_client_id']) && is_numeric($vars['sub_client_id'])
-            ? (int) $vars['sub_client_id']
-            : 0;
-
-        if ($existingId > 0) {
-            $resp = $api->patchSubClient($existingId, ['status' => 'active']);
-            if (!$resp['ok']) {
-                $this->Input->setErrors(['api' => ['reactivate' => 'PanelDNS re-activation failed. See module log for details.']]);
-                return;
-            }
-            return [
-                ['key' => 'sub_client_id',        'value' => (string) $existingId, 'encrypted' => 0],
-                ['key' => 'sub_client_email',      'value' => $email,               'encrypted' => 0],
-                ['key' => 'grace_period_deadline', 'value' => '',                   'encrypted' => 0],
-            ];
-        }
+        // SEC-LINK-01: the former IDEMPOTENT-01 branch lived here. When $vars carried a
+        // numeric sub_client_id it PATCHed THAT sub-client to active and stored its ID on
+        // this service — so an order whose input named another customer's (sequential,
+        // guessable) sub-client ID reactivated and took over that sub-client. Removed:
+        // this method always creates. Re-activation is unsuspendService()'s job, and an
+        // existing sub-client is attached only by the explicit admin-tab link action.
 
         $payload = [
             'name'        => $name,
@@ -493,7 +514,10 @@ class Paneldns extends Module
         $resp = $api->createSubClient($payload);
 
         if (!$resp['ok']) {
-            $this->Input->setErrors(['api' => ['create' => 'PanelDNS provisioning failed. See module log for details.']]);
+            // SEC-LINK-02: an email collision is reported to the admin and provisioning
+            // stops. Never retry with a modified email, and never look the existing
+            // account up to link it — that is exactly the takeover this prevents.
+            $this->Input->setErrors(['api' => ['create' => $this->createFailureMessage($resp, $email)]]);
             return;
         }
 
@@ -759,13 +783,19 @@ class Paneldns extends Module
             $error = 'Unable to load usage data. Please try again later.';
         }
 
-        // SSO button — non-fatal if it fails.
-        $ssoUrl = null;
+        // SSO button — non-fatal if it fails. Minted for the stored sub-client ID only
+        // (SEC-SSO-02); no client-supplied identity is ever sent.
+        $ssoUrl   = null;
+        $ssoError = null;
         try {
             $ssoResp = $api->mintSsoToken($subClientId);
             if ($ssoResp['ok'] && !empty($ssoResp['data']['login_url'])
                 && str_starts_with((string) $ssoResp['data']['login_url'], 'https://')) {
                 $ssoUrl = $ssoResp['data']['login_url'];
+            } elseif (PanelDnsApi::isSsoRefusedPlatformAdmin($ssoResp)) {
+                // SEC-SSO-03: PanelDNS refused because the target is a platform admin.
+                $ssoError = Language::_('paneldns.client_usage.sso_refused', true);
+                $this->log('tabClientUsage.sso', 'SSO refused by PanelDNS (sso_refused_platform_admin) for sub-client ' . $subClientId, 'output', false);
             }
         } catch (Throwable $e) {
             // Non-fatal.
@@ -778,6 +808,7 @@ class Paneldns extends Module
         $this->view->set('not_provisioned', false);
         $this->view->set('data', $data);
         $this->view->set('sso_url', $ssoUrl);
+        $this->view->set('sso_error', $ssoError);
         $this->view->set('error', $error);
         $this->view->set('nameservers', $nameservers);
         $this->view->set('service_id', $serviceId);
@@ -1243,12 +1274,27 @@ class Paneldns extends Module
      * Shows sub-client summary, a list of up to 20 zones, and action buttons:
      * - Resync: reload the summary data.
      * - Resend Welcome Email: mint a fresh SSO token and resend.
+     * - Link existing sub-client (unlinked services only): see linkExistingSubClient().
      */
     public function tabAdminActions($package, $service, array $get = null, array $post = null, array $files = null): string
     {
         $this->view = $this->makeView('tab_admin_actions', 'default', '');
 
-        $id = $this->getSubClientId($service);
+        $id          = $this->getSubClientId($service);
+        $linkError   = null;
+        $linkSuccess = null;
+
+        // SEC-LINK-03: explicit, per-service admin action. Only offered while the
+        // service has no stored sub-client ID, so it can never re-point a linked one.
+        if (!$id && (($post['pdns_admin_action'] ?? '') === 'link_existing')) {
+            $link = $this->linkExistingSubClient($service, (array) $post);
+            if ($link['error'] !== null) {
+                $linkError = $link['error'];
+            } else {
+                $id          = $link['id'];
+                $linkSuccess = $link['email'];
+            }
+        }
 
         if (!$id) {
             $this->view->set('not_provisioned', true);
@@ -1257,6 +1303,8 @@ class Paneldns extends Module
             $this->view->set('sync_success', false);
             $this->view->set('resend_success', false);
             $this->view->set('resend_error', null);
+            $this->view->set('link_error', $linkError);
+            $this->view->set('link_success', null);
             $this->view->set('sub_client_id', null);
             $this->view->set('admin_url', null);
             $this->view->set('zones', []);
@@ -1328,6 +1376,8 @@ class Paneldns extends Module
         $this->view->set('sync_success', $syncSuccess);
         $this->view->set('resend_success', $resendSuccess);
         $this->view->set('resend_error', $resendError);
+        $this->view->set('link_error', null);
+        $this->view->set('link_success', $linkSuccess);
         $this->view->set('admin_url', $adminUrl);
         $this->view->set('zones', $zones);
         return $this->view->fetch();
@@ -1398,6 +1448,9 @@ class Paneldns extends Module
                     $secs        = (int) $ssoResp['data']['expires_in'];
                     $loginExpiry = $secs >= 60 ? floor($secs / 60) . ' minute(s)' : $secs . ' second(s)';
                 }
+            } elseif (PanelDnsApi::isSsoRefusedPlatformAdmin($ssoResp)) {
+                // SEC-SSO-03: no login link; the email falls back to the plain portal URL.
+                $this->log('sendWelcomeEmail.sso', 'SSO refused by PanelDNS (sso_refused_platform_admin) for sub-client ' . $subClientId, 'output', false);
             }
         } catch (Throwable $e) {
             // Non-fatal — proceed with portal URL if SSO is unavailable.
@@ -1586,7 +1639,7 @@ class Paneldns extends Module
                 foreach ($services as $svc) {
                     if ($processed >= $limit) break;
 
-                    $subClientId = isset($svc->fields) ? ($svc->fields['sub_client_id'] ?? null) : null;
+                    $subClientId = $this->getServiceField($svc, 'sub_client_id');
                     if (!$subClientId || !is_numeric($subClientId)) {
                         $processed++;
                         continue;
@@ -1675,8 +1728,8 @@ class Paneldns extends Module
                 foreach ($services as $svc) {
                     if ($processed >= $limit) break;
 
-                    $subClientId = isset($svc->fields) ? ((int) ($svc->fields['sub_client_id'] ?? 0)) : 0;
-                    $deadline    = isset($svc->fields) ? ($svc->fields['grace_period_deadline'] ?? '') : '';
+                    $subClientId = (int) ($this->getServiceField($svc, 'sub_client_id') ?? 0);
+                    $deadline    = (string) ($this->getServiceField($svc, 'grace_period_deadline') ?? '');
 
                     if (!$subClientId || empty($deadline)) {
                         $processed++;
@@ -2061,15 +2114,233 @@ class Paneldns extends Module
         return ($id && is_numeric($id)) ? (int) $id : null;
     }
 
+    /**
+     * Read one stored service field.
+     *
+     * BLESTA-FIELDS-01: Blesta hands modules $service->fields as a LIST of stdClass
+     * {key, value, encrypted} rows (what Module::serviceFieldsToObject() converts). The
+     * old reader indexed that list by key, so it never found sub_client_id on a real
+     * service. A keyed array or object is still accepted.
+     */
     private function getServiceField($service, string $key): ?string
     {
-        if (isset($service->fields) && is_array($service->fields)) {
-            return $service->fields[$key] ?? null;
+        $fields = $service->fields ?? null;
+
+        if (is_object($fields)) {
+            return isset($fields->$key) ? (string) $fields->$key : null;
         }
-        if (isset($service->fields) && is_object($service->fields)) {
-            return $service->fields->$key ?? null;
+        if (!is_array($fields)) {
+            return null;
+        }
+
+        foreach ($fields as $k => $f) {
+            if (is_object($f) && isset($f->key)) {
+                if ((string) $f->key === $key) {
+                    return isset($f->value) ? (string) $f->value : null;
+                }
+                continue;
+            }
+            if ($k === $key && is_scalar($f)) {
+                return (string) $f;
+            }
         }
         return null;
+    }
+
+    /**
+     * Load the Blesta client record behind an order as a plain array
+     * (email, first_name, last_name, company). Empty when unavailable.
+     */
+    private function loadBlestaClient(array $vars): array
+    {
+        $clientId = (int) ($vars['client_id'] ?? 0);
+        if ($clientId <= 0) {
+            return [];
+        }
+        try {
+            if (!isset($this->Clients)) {
+                Loader::loadModels($this, ['Clients']);
+            }
+            $client = $this->Clients->get($clientId, false);
+        } catch (Throwable $e) {
+            return [];
+        }
+        if (!is_object($client)) {
+            return [];
+        }
+        return [
+            'email'      => (string) ($client->email      ?? ''),
+            'first_name' => (string) ($client->first_name ?? ''),
+            'last_name'  => (string) ($client->last_name  ?? ''),
+            'company'    => (string) ($client->company    ?? ''),
+        ];
+    }
+
+    /**
+     * SEC-LINK-02: admin-facing message for a failed sub-client create.
+     */
+    private function createFailureMessage(array $resp, string $email): string
+    {
+        $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+
+        switch (PanelDnsApi::emailConflictReason($resp)) {
+            case 'owner_email_exists':
+            case 'user_email_exists':
+                return Language::_('paneldns.!error.create.account_email_exists', true, $safeEmail);
+            case 'sub_client_email_exists':
+                return Language::_('paneldns.!error.create.sub_client_email_exists', true, $safeEmail);
+        }
+
+        return Language::_('paneldns.!error.create.failed', true);
+    }
+
+    /**
+     * SEC-LINK-03: bind an existing PanelDNS sub-client to an unlinked service.
+     *
+     * The only path besides addService() that writes sub_client_id. It is admin-only
+     * (rendered on the admin service tab), per-service, and keyed by the PanelDNS-issued
+     * sub-client ID the admin types — never by email or any Blesta client field. It
+     * refuses unless the admin ticks the confirmation, the ID exists in this reseller's
+     * PanelDNS org, and no other Blesta service on this server already stores it.
+     *
+     * @return array{error: ?string, id: ?int, email: ?string}
+     */
+    private function linkExistingSubClient($service, array $post): array
+    {
+        $fail = static fn (string $key): array => [
+            'error' => Language::_($key, true),
+            'id'    => null,
+            'email' => null,
+        ];
+
+        $raw = trim((string) ($post['link_sub_client_id'] ?? ''));
+        if ($raw === '' || !ctype_digit($raw) || (int) $raw <= 0) {
+            return $fail('paneldns.admin_actions.link_error_id');
+        }
+        if ((string) ($post['link_confirm'] ?? '') !== '1') {
+            return $fail('paneldns.admin_actions.link_error_confirm');
+        }
+
+        $subClientId = (int) $raw;
+        $serviceId   = (int) ($service->id ?? 0);
+        $row         = $this->getModuleRow();
+        if (!$row || $serviceId <= 0) {
+            return $fail('paneldns.admin_actions.link_error_lookup');
+        }
+
+        $api = $this->makeApiFromRow($row);
+
+        // The reseller token scopes this lookup to the reseller's own org.
+        try {
+            $resp = $api->getSubClient($subClientId);
+        } catch (Throwable $e) {
+            return $fail('paneldns.admin_actions.link_error_lookup');
+        }
+        if (empty($resp['ok']) || !is_array($resp['data'] ?? null)) {
+            return $fail((int) ($resp['status'] ?? 0) === 404
+                ? 'paneldns.admin_actions.link_error_not_found'
+                : 'paneldns.admin_actions.link_error_lookup');
+        }
+
+        $others = $this->servicesLinkedTo($row, $subClientId, $serviceId);
+        if ($others === null) {
+            // Fail closed: an unverifiable link could bind two customers to one account.
+            return $fail('paneldns.admin_actions.link_error_lookup');
+        }
+        if (!empty($others)) {
+            return [
+                'error' => Language::_('paneldns.admin_actions.link_error_in_use', true, implode(', ', $others)),
+                'id'    => null,
+                'email' => null,
+            ];
+        }
+
+        // Store PanelDNS's own email for the sub-client, not a Blesta value.
+        $email = (string) ($resp['data']['email'] ?? '');
+        if (!$this->storeServiceField($service, 'sub_client_id', (string) $subClientId)) {
+            return $fail('paneldns.admin_actions.link_error_store');
+        }
+        $this->storeServiceField($service, 'sub_client_email', $email);
+
+        $this->log(
+            'tabAdminActions.link_existing',
+            json_encode(['service_id' => $serviceId, 'sub_client_id' => $subClientId]),
+            'output',
+            true
+        );
+
+        return ['error' => null, 'id' => $subClientId, 'email' => $email];
+    }
+
+    /**
+     * IDs of other Blesta services on this server row that already store the given
+     * sub_client_id. Null when that cannot be determined (callers must fail closed).
+     *
+     * @return int[]|null
+     */
+    private function servicesLinkedTo($row, int $subClientId, int $excludeServiceId): ?array
+    {
+        $moduleId = (int) ($row->module_id ?? 0);
+        if ($moduleId <= 0) {
+            return null;
+        }
+
+        try {
+            if (!isset($this->Services)) {
+                Loader::loadModels($this, ['Services']);
+            }
+            $hits = $this->Services->searchServiceFields($moduleId, 'sub_client_id', (string) $subClientId);
+        } catch (Throwable $e) {
+            $this->log('servicesLinkedTo', $e->getMessage(), 'output', false);
+            return null;
+        }
+
+        $ids = [];
+        foreach ((array) $hits as $hit) {
+            $sid = (int) ($hit->id ?? 0);
+            if ($sid <= 0 || $sid === $excludeServiceId) {
+                continue;
+            }
+            if (isset($hit->module_row_id) && (int) $hit->module_row_id !== (int) ($row->id ?? 0)) {
+                continue; // Another server row, i.e. a different PanelDNS account.
+            }
+
+            // Re-check the stored value exactly, in case the search matched loosely.
+            // A service that cannot be loaded counts as a conflict.
+            try {
+                $full = $this->Services->get($sid);
+            } catch (Throwable $e) {
+                $full = null;
+            }
+            if (is_object($full) && $this->getServiceField($full, 'sub_client_id') !== (string) $subClientId) {
+                continue;
+            }
+            $ids[] = $sid;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Write one service field, adding it when the service does not have it yet.
+     */
+    private function storeServiceField($service, string $key, string $value): bool
+    {
+        try {
+            if (!isset($this->Services)) {
+                Loader::loadModels($this, ['Services']);
+            }
+            $vars = ['key' => $key, 'value' => $value, 'encrypted' => 'false'];
+            if ($this->getServiceField($service, $key) !== null) {
+                $this->Services->editField((int) $service->id, $vars);
+            } else {
+                $this->Services->addField((int) $service->id, $vars);
+            }
+            return empty($this->Services->errors());
+        } catch (Throwable $e) {
+            $this->log('storeServiceField', $key . ': ' . $e->getMessage(), 'output', false);
+            return false;
+        }
     }
 
     /**

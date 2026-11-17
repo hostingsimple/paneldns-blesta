@@ -10,7 +10,7 @@ the client area — giving clients the same experience as the WHMCS and HostBill
 
 **Blesta version:** 5.x  
 **PHP version:** 8.0–8.2  
-**PanelDNS:** any version exposing `/api/v1` sub-client endpoints
+**PanelDNS:** 3.104.1 or later recommended (see [Account linking](#account-linking)); the module works with any version exposing the `/api/v1` sub-client endpoints
 
 ---
 
@@ -26,7 +26,8 @@ the client area — giving clients the same experience as the WHMCS and HostBill
 | Grace period | Optional termination grace period; final DELETE fires on expiry via cron |
 | Welcome email | SSOlogin link + nameservers sent to client on first provision; resendable from admin |
 | GDPR consent | Legal version stamped at sub-client creation |
-| Idempotent create | Re-provision an existing sub-client by patching status:active |
+| No account reuse | Provisioning always creates a **new** sub-client; it never attaches an existing one by email or by an ID in the order input |
+| Admin link existing | Admin-only, per-service action to attach an existing sub-client by its PanelDNS ID (see [Account linking](#account-linking)) |
 | Drift sync | Daily cron task reconciles Blesta service status with upstream |
 | Grace expiry | Daily cron task finalises deletions after grace period ends |
 | **Zone list** | Client sees all their DNS zones; create, delete, export |
@@ -80,8 +81,16 @@ the client area — giving clients the same experience as the WHMCS and HostBill
    | Auto Delete Zone | Automatically delete the zone when a domain expires |
    | Grace Period (days) | Days between termination and final deletion (0 = immediate) |
 
-5. **Order a service** — Blesta calls `addService()` which creates the sub-client
-   using the Blesta client's name and email.
+5. **Order a service** — Blesta calls `addService()` which creates a new sub-client
+   using the Blesta client's name and email. If a sub-client with that email already
+   exists in your reseller account, provisioning stops with an error; the module does
+   not take over the existing sub-client.
+
+6. **Attach an existing sub-client (optional)** — to bind a sub-client that already
+   exists in PanelDNS to a Blesta service (for example when migrating), add the service
+   **without** "use module", open the service's **PanelDNS** admin tab, enter the
+   sub-client's PanelDNS ID, tick the confirmation and click **Link sub-client**. See
+   [Account linking](#account-linking).
 
 ---
 
@@ -135,7 +144,7 @@ All under `/api/v1` (Bearer token auth):
 | GET | `/api/v1/licence-status` | Credential validation on server save |
 | GET | `/api/v1/legal-version` | GDPR consent stamp at creation |
 | POST | `/api/v1/sub-clients` | `addService` |
-| GET | `/api/v1/sub-clients/{id}` | Drift sync |
+| GET | `/api/v1/sub-clients/{id}` | Drift sync; admin "Link sub-client" verification |
 | PATCH | `/api/v1/sub-clients/{id}` | `suspendService`, `unsuspendService`, `changeServicePackage` |
 | DELETE | `/api/v1/sub-clients/{id}` | `cancelService` (and grace expiry cron) |
 | GET | `/api/v1/sub-clients/{id}/summary` | Client tab + admin tab |
@@ -196,6 +205,38 @@ components/modules/paneldns/
 - **Ownership enforcement**: zone and record actions resolve the zone's `sub_client_id` from the API and compare it to the authenticated sub-client before any mutation — a client cannot act on another client's zones by guessing an ID.
 - **Record type allowlist**: only A, AAAA, CNAME, MX, TXT= NS, SRV, CAA, PTR, TLSA, SSHFP, HTTPS, NAPTR are accepted server-side, regardless of what the client POSTs.
 - **Input caps**: zone names ≤ 253 chars, record names ≤ 253 chars, record content ≤ 4096 chars, BIND import ≤ 512 KB.
+
+### Account linking
+
+Blesta does not verify a client's email address, and the values in an order are the
+customer's own input. The module therefore treats both as attacker-controlled when it
+decides which PanelDNS account a service belongs to:
+
+- A service is bound only to the sub-client whose **PanelDNS-issued ID** is stored on that
+  service. That ID is written in two places only: when PanelDNS creates a **new**
+  sub-client during provisioning, and by the admin-only **Link sub-client** action.
+- Provisioning never links by email and never reuses an ID supplied in the order. If the
+  client's email is already used by a sub-client in your reseller account, provisioning
+  fails with a clear error. It is never retried with an altered email.
+- **Link sub-client** (PanelDNS admin tab, unlinked services only) takes a numeric
+  PanelDNS sub-client ID, never an email. It requires an explicit confirmation and checks
+  that the sub-client exists in your reseller account. It refuses an ID already stored on
+  another Blesta service on the same server. If that check cannot run, it refuses rather
+  than guessing. The admin is responsible for confirming the sub-client belongs to the
+  customer.
+- SSO links are minted only for the stored sub-client ID. No client-supplied identity
+  (such as a `user_email`) is ever sent to the SSO endpoint. If PanelDNS refuses SSO
+  because the target is a platform administrator (403 `sso_refused_platform_admin`), the
+  client area shows "Single sign-on is not available for this account".
+
+**Upgrade PanelDNS to 3.104.1 or later.** This module uses only the reseller
+`/api/v1/sub-clients` API. That API rejects a duplicate email within your organisation
+(422) rather than reusing the account, so the module works against older PanelDNS.
+However, PanelDNS before 3.104.1 still attached an existing account to a new org by email
+on the Platform API (`POST /platform/v1/orgs`), which other billing integrations use. An
+operator running an older PanelDNS is exposed through those paths regardless of this
+module. PanelDNS 3.104.1 returns 409 `owner_email_exists` / `user_email_exists` there, and
+this module maps those reasons to the same clear admin error if it ever receives them.
 
 ---
 

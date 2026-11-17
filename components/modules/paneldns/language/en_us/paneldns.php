@@ -93,6 +93,7 @@ $lang['paneldns.client_usage.status']             = 'Status';
 $lang['paneldns.client_usage.manage_dns_button']  = 'Manage DNS';
 $lang['paneldns.client_usage.sso_note']           = 'Opens your DNS control panel. Link expires shortly.';
 $lang['paneldns.client_usage.sso_unavailable']    = 'SSO login is temporarily unavailable. Please try again later.';
+$lang['paneldns.client_usage.sso_refused']        = 'Single sign-on is not available for this account. Please contact support.';
 $lang['paneldns.client_usage.not_provisioned']    = 'Your DNS account has not been provisioned yet. Please contact support.';
 $lang['paneldns.client_usage.error']              = 'Could not load account data. Please try again or contact support.';
 $lang['paneldns.client_usage.suspended']          = 'Your DNS account is currently suspended. Please contact support to reactivate.';
@@ -254,6 +255,20 @@ $lang['paneldns.admin_actions.not_provisioned']   = 'This service has not been p
 $lang['paneldns.admin_actions.error']             = 'Could not load sub-client data. Check the module log for details.';
 $lang['paneldns.admin_actions.grace_period_deadline'] = 'Grace Period Ends';
 
+// Link an existing sub-client (SEC-LINK-03) — admin tab, unlinked services only
+$lang['paneldns.admin_actions.link_heading']        = 'Link an existing PanelDNS sub-client';
+$lang['paneldns.admin_actions.link_intro']          = 'Attach a sub-client that already exists in your PanelDNS reseller account to this service, by its PanelDNS sub-client ID. The customer will be able to manage that sub-client\'s zones and log in to it. The module never links accounts by email; only do this after confirming the sub-client belongs to this customer.';
+$lang['paneldns.admin_actions.link_field_id']       = 'PanelDNS sub-client ID';
+$lang['paneldns.admin_actions.link_confirm']        = 'I have confirmed this sub-client belongs to this service\'s customer.';
+$lang['paneldns.admin_actions.link_button']         = 'Link sub-client';
+$lang['paneldns.admin_actions.link_success']        = 'Sub-client linked to this service.';
+$lang['paneldns.admin_actions.link_error_id']       = 'Enter the numeric PanelDNS sub-client ID.';
+$lang['paneldns.admin_actions.link_error_confirm']  = 'Tick the confirmation box to link this sub-client.';
+$lang['paneldns.admin_actions.link_error_not_found'] = 'No sub-client with that ID exists in this PanelDNS reseller account.';
+$lang['paneldns.admin_actions.link_error_in_use']   = 'That sub-client is already linked to Blesta service %1$s. One sub-client cannot be linked to two services.';
+$lang['paneldns.admin_actions.link_error_lookup']   = 'Could not verify the sub-client, so it was not linked. Check the module log and try again.';
+$lang['paneldns.admin_actions.link_error_store']    = 'The sub-client was verified but could not be saved on this service. Check the module log.';
+
 // Validation / error messages
 $lang['paneldns.!error.name.empty']                   = 'Please enter a name for this server.';
 $lang['paneldns.!error.base_url.empty']               = 'Please enter the Base URL for your PanelDNS installation.';
@@ -263,6 +278,11 @@ $lang['paneldns.!error.api_token.invalid']            = 'The API Token is invali
 $lang['paneldns.!error.zone_limit.format']            = 'Zone Limit must be a whole number (0 or greater).';
 $lang['paneldns.!error.max_records.format']           = 'Record Limit must be a whole number (0 or greater).';
 $lang['paneldns.!error.sub_client_email.format']      = 'The email address is not valid.';
+
+// Sub-client create failures (SEC-LINK-02). Provisioning stops; nothing is retried.
+$lang['paneldns.!error.create.failed']                  = 'PanelDNS provisioning failed. See the module log for details.';
+$lang['paneldns.!error.create.account_email_exists']    = 'A PanelDNS account already uses %1$s. For security PanelDNS will not attach an existing account to a new org automatically. Use a different client email or link the org manually in PanelDNS admin.';
+$lang['paneldns.!error.create.sub_client_email_exists'] = 'A PanelDNS sub-client already uses %1$s in this reseller account. For security this module will not attach an existing sub-client to a new service automatically. Use a different client email, or, after confirming the existing sub-client belongs to this customer, link it from this service\'s PanelDNS admin tab.';
 $lang['paneldns.!error.grace_period.format']          = 'Termination Grace Period must be a whole number (0 or greater).';
 $lang['paneldns.!error.ns1_hostname.format']          = 'NS1 Hostname must be a valid hostname.';
 $lang['paneldns.!error.ns2_hostname.format']          = 'NS2 Hostname must be a valid hostname.';
