@@ -90,10 +90,59 @@ class PanelDnsApi
     /**
      * POST /api/v1/sub-clients/{id}/sso-token
      * Mints a short-lived one-time SSO login URL pointing at the sub-client portal.
+     *
+     * SEC-SSO-02: the identity is ONLY the PanelDNS-issued sub-client ID stored on the
+     * Blesta service. No body is sent — in particular never a `user_email` or any other
+     * Blesta client field, which the customer controls and Blesta never verifies.
      */
     public function mintSsoToken(int $id): array
     {
         return $this->post("/api/v1/sub-clients/{$id}/sso-token");
+    }
+
+    // ── Response classification (pure, no I/O) ────────────────────────────────
+
+    /**
+     * SEC-LINK-02: classify a failed create as an email collision with an existing
+     * PanelDNS account, or null when it is any other failure.
+     *
+     *   - 'owner_email_exists' / 'user_email_exists' — PanelDNS 3.104.1+ Platform API
+     *     409s. This module only calls the reseller sub-client API, so these are not
+     *     expected here; they are mapped defensively so a 409 can never be mistaken
+     *     for a retryable error.
+     *   - 'sub_client_email_exists' — the reseller sub-client API's own 422 when the
+     *     email is already used by a sub-client in this reseller org.
+     *
+     * Callers must surface this to the admin and stop. Never retry with a modified
+     * email, and never fall back to looking the existing account up and linking it.
+     */
+    public static function emailConflictReason(array $resp): ?string
+    {
+        $reason = (string) ($resp['reason'] ?? '');
+        if ($reason === 'owner_email_exists' || $reason === 'user_email_exists') {
+            return $reason;
+        }
+
+        if ((int) ($resp['status'] ?? 0) === 422 && !empty($resp['errors']['email'])) {
+            $messages = strtolower(implode(' ', array_map('strval', (array) $resp['errors']['email'])));
+            if (str_contains($messages, 'taken') || str_contains($messages, 'exists')) {
+                return 'sub_client_email_exists';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * SEC-SSO-03: PanelDNS 3.104.1+ refuses to mint SSO for a platform super-admin
+     * (403, reason sso_refused_platform_admin). A reseller sub-client can never be one,
+     * so this is defensive; it lets callers show a clear message instead of a silent
+     * "SSO unavailable".
+     */
+    public static function isSsoRefusedPlatformAdmin(array $resp): bool
+    {
+        return (int) ($resp['status'] ?? 0) === 403
+            && ($resp['reason'] ?? null) === 'sso_refused_platform_admin';
     }
 
     // ── Generic HTTP verbs ────────────────────────────────────────────────────
@@ -127,7 +176,7 @@ class PanelDnsApi
         $headers = [
             'Accept: application/json',
             'Authorization: Bearer ' . $this->apiToken,
-            'User-Agent: paneldns-blesta/2.0.0',
+            'User-Agent: paneldns-blesta/3.2.0',
         ];
 
         $opts = [
@@ -170,13 +219,27 @@ class PanelDnsApi
         }
 
         $decoded = json_decode((string) ($raw ?: 'null'), true);
+        $decoded = is_array($decoded) ? $decoded : null;
         $ok      = $status >= 200 && $status < 300;
+
+        // Laravel validation failures (422) carry `message` + `errors` instead of the
+        // `error` envelope; surface the message for 422 only, so a debug-mode 5xx
+        // message can never reach a client-area flash.
+        $error = null;
+        if (!$ok) {
+            $error = $decoded['error']
+                ?? ($status === 422 && isset($decoded['message']) ? (string) $decoded['message'] : null)
+                ?? "HTTP {$status}";
+        }
 
         return [
             'ok'       => $ok,
             'status'   => $status,
-            'data'     => is_array($decoded) ? ($decoded['data'] ?? $decoded) : null,
-            'error'    => $ok ? null : ($decoded['error'] ?? "HTTP {$status}"),
+            'data'     => $decoded !== null ? ($decoded['data'] ?? $decoded) : null,
+            'error'    => $error,
+            // Machine-readable failure reason (e.g. owner_email_exists, sso_refused_platform_admin).
+            'reason'   => $ok ? null : (isset($decoded['reason']) ? (string) $decoded['reason'] : null),
+            'errors'   => $ok ? null : (isset($decoded['errors']) && is_array($decoded['errors']) ? $decoded['errors'] : null),
             'raw_body' => $raw,
         ];
     }

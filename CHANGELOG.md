@@ -4,6 +4,83 @@ All notable changes are documented here. Follows [Keep a Changelog](https://keep
 
 ---
 
+## [3.2.0] — 2026-11-18
+
+### Security — a service could be bound to another customer's PanelDNS sub-client
+
+PanelDNS found a critical account-takeover class in its WHMCS module. Billing systems do not
+verify client emails, and that module linked new services to existing PanelDNS accounts by
+email. This module never did that. It uses only the reseller sub-client API, and that API
+rejects a duplicate email instead of reusing the account. An audit found the same class
+through a different input: an **ID taken from `$vars`**.
+
+Blesta documents `$vars` as user-supplied, and on a client order it carries the order form's
+input. Blesta also forces `use_module=false` for pending and in-review orders, so customers
+reach the no-provision branch.
+
+- **`addService()` no-provision path stored `$vars['sub_client_id']` as the service's link**
+  (SEC-LINK-01). An order that named another customer's sub-client ID bound the new service
+  to it, and the client tab and SSO then opened that customer's zones. Sub-client IDs are
+  sequential, so they are easy to guess. The branch now always stores an empty ID.
+- **`addService()` "idempotent create" (IDEMPOTENT-01) reused `$vars['sub_client_id']`.**
+  When the order input carried a numeric ID, provisioning PATCHed *that* sub-client to
+  `active` and stored its ID. It neither created a sub-client nor checked ownership.
+  **Removed:** `addService()` now always creates a new sub-client. Reactivating a
+  sub-client is `unsuspendService()`'s job.
+- **New: explicit admin "Link sub-client" action** (SEC-LINK-03). This replaces "add the
+  service without the module and type an ID" for attaching an existing sub-client. It
+  appears on the PanelDNS admin tab of an unlinked service only. It takes the numeric
+  PanelDNS ID, never an email, and requires a confirmation tick. It verifies that the
+  sub-client exists in the reseller account and refuses an ID already stored on another
+  service on the same server. It fails closed when that check cannot run. It stores
+  PanelDNS's own email for the sub-client.
+- **Create failures are reported, never worked around** (SEC-LINK-02). A duplicate email
+  in the reseller org (422) now gives a clear admin error that names the email. So do the
+  PanelDNS 3.104.1 Platform API reasons `owner_email_exists` / `user_email_exists` (409),
+  which are mapped defensively. Provisioning stops. The module never retries with a
+  modified email and never looks the existing account up to link it.
+- **SSO** (SEC-SSO-02/03). Tokens are minted only for the stored sub-client ID, with no
+  request body. A 403 `sso_refused_platform_admin` from PanelDNS 3.104.1 now shows "Single
+  sign-on is not available for this account" in the client area and is logged.
+- `PanelDnsApi` responses now carry `reason` and `errors`, and surface the validation
+  `message` for 422s.
+
+**Operators: upgrade PanelDNS to 3.104.1 or later as well.** This module does not depend on
+it, but PanelDNS before 3.104.1 still attaches an existing account to a new org by email on
+the Platform API (`/platform/v1/orgs`), which other billing integrations use.
+
+### Fixed — on the linking path
+
+- **`addService()` signature did not match `Module::addService()`** (BLESTA-SIG-01). The
+  parameters were declared `($package, $service, $vars, ...)` instead of
+  `($package, $vars, $parent_package, $parent_service, $status)`, so every argument
+  arrived one position late. The IDEMPOTENT-01 bug was dormant behind this mismatch and
+  would have gone live once the signature was corrected.
+- **Stored service fields were never found** (BLESTA-FIELDS-01). Blesta passes
+  `$service->fields` as a list of `{key, value}` objects, but the reader indexed it by key.
+  `getServiceField()` now handles Blesta's shape. The drift-sync and grace-expiry cron
+  tasks use it too.
+- The sub-client email and name now come from the Blesta client record (`client_id`).
+  Previously they came from a `$vars['client']` array that Blesta does not pass.
+
+### Known issues (not addressed in this release)
+
+The module still has defects unrelated to this fix that likely stop it from running on a
+live Blesta install:
+
+- `makeView()` is called for every view but is not defined in this module. Blesta's own
+  modules build views with `new View(...)`.
+- `getModuleRows()` is redeclared `private`. PHP rejects that at class load if the base
+  `Module` declares it `protected` or `public`.
+- Four client views are rendered under names that do not match their files:
+  `tab_client_zones`, `tab_client_records`, `tab_client_zone_create` and
+  `tab_client_zone_import`, against `zones.pdt`, `records.pdt`, `zone_create.pdt` and
+  `zone_import.pdt`.
+
+These need a separate repair and a live Blesta test.
+
+---
+
 ## [3.1.1] — 2026-08-27
 
 ### Fixed

@@ -12,6 +12,8 @@
  *   $error           (string) — error message (may be null)
  *   $sync_success    (bool)   — true if a manual re-sync just ran successfully
  *   $admin_url       (string) — link to sub-client in PanelDNS admin panel (may be null)
+ *   $link_error      (string) — link-existing failure message (may be null)
+ *   $link_success    (string) — set (sub-client email, may be '') right after a successful link; else null
  *   $zones           (array)  — up to 20 zones [{name, status}]
  *   $flash_messages  (array)  — [{type:'success'|'error', msg:'...'}]
  */
@@ -35,7 +37,52 @@
         This service has not been provisioned yet. Use the "Create" button above to provision the DNS account.
     </div>
 
+    <?php if (!empty($link_error)) { ?>
+    <div class="alert alert-danger">
+        <?php echo htmlspecialchars((string) $link_error, ENT_QUOTES, 'UTF-8'); ?>
+    </div>
+    <?php } ?>
+
+    <!-- SEC-LINK-03: explicit per-service link of an existing sub-client, by PanelDNS ID only -->
+    <div style="max-width:640px; border:1px solid #e5e7eb; border-radius:6px; padding:14px 16px;">
+        <h4 style="font-size:13px; font-weight:600; color:#374151; margin:0 0 8px;">
+            <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_heading', true), ENT_QUOTES, 'UTF-8'); ?>
+        </h4>
+        <p style="font-size:12.5px; color:#4b5563; margin:0 0 12px;">
+            <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_intro', true), ENT_QUOTES, 'UTF-8'); ?>
+        </p>
+        <?php $this->Form->create(); ?>
+        <input type="hidden" name="pdns_admin_action" value="link_existing">
+        <div style="margin-bottom:8px;">
+            <label for="pdns_link_sub_client_id" style="font-size:12.5px; font-weight:600; display:block; margin-bottom:4px;">
+                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_field_id', true), ENT_QUOTES, 'UTF-8'); ?>
+            </label>
+            <input type="number" min="1" step="1" required
+                   id="pdns_link_sub_client_id" name="link_sub_client_id"
+                   class="form-control" style="max-width:200px;">
+        </div>
+        <div style="margin-bottom:10px;">
+            <label style="font-size:12.5px; font-weight:normal;">
+                <input type="checkbox" name="link_confirm" value="1" required>
+                <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_confirm', true), ENT_QUOTES, 'UTF-8'); ?>
+            </label>
+        </div>
+        <button type="submit" class="btn btn-default btn-sm">
+            <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_button', true), ENT_QUOTES, 'UTF-8'); ?>
+        </button>
+        <?php $this->Form->end(); ?>
+    </div>
+
     <?php } else { ?>
+
+    <?php if (isset($link_success) && $link_success !== null) { ?>
+    <div class="alert alert-success">
+        <?php echo htmlspecialchars(Language::_('paneldns.admin_actions.link_success', true), ENT_QUOTES, 'UTF-8'); ?>
+        <?php if ($link_success !== '') { ?>
+        (<?php echo htmlspecialchars((string) $link_success, ENT_QUOTES, 'UTF-8'); ?>)
+        <?php } ?>
+    </div>
+    <?php } ?>
 
     <?php if (!empty($sync_success)) { ?>
     <div class="alert alert-success">
